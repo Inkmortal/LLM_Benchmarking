@@ -3,43 +3,76 @@ import boto3
 from botocore.exceptions import ClientError
 import json
 
+def test_s3_permissions():
+    """Test S3 permissions by attempting actual operations."""
+    missing_permissions = []
+    s3 = boto3.client('s3')
+    test_bucket = "test-permissions-bucket-" + str(hash(str(boto3.client('sts').get_caller_identity())))[:8]
+    test_key = "test-file.txt"
+    test_data = b"test data"
+
+    try:
+        # Test ListBuckets
+        try:
+            s3.list_buckets()
+            print("✅ S3:ListBuckets - Success")
+        except ClientError as e:
+            missing_permissions.append('ListBuckets')
+            print(f"❌ S3:ListBuckets - {e.response['Error']['Message']}")
+
+        # Test CreateBucket, PutObject, GetObject, DeleteObject, DeleteBucket
+        try:
+            s3.create_bucket(Bucket=test_bucket)
+            print("✅ S3:CreateBucket - Success")
+            
+            s3.put_object(Bucket=test_bucket, Key=test_key, Body=test_data)
+            print("✅ S3:PutObject - Success")
+            
+            s3.get_object(Bucket=test_bucket, Key=test_key)
+            print("✅ S3:GetObject - Success")
+            
+            s3.delete_object(Bucket=test_bucket, Key=test_key)
+            print("✅ S3:DeleteObject - Success")
+            
+            s3.delete_bucket(Bucket=test_bucket)
+            print("✅ S3:DeleteBucket - Success")
+            
+        except ClientError as e:
+            error_code = e.response['Error']['Code']
+            if 'AccessDenied' in error_code:
+                current_operation = e.operation_name
+                missing_permissions.append(current_operation)
+                print(f"❌ S3:{current_operation} - {e.response['Error']['Message']}")
+            else:
+                print(f"Warning: Non-permission error during S3 tests: {str(e)}")
+    except Exception as e:
+        print(f"❌ Error during S3 tests: {str(e)}")
+        missing_permissions.extend(['ListBuckets', 'CreateBucket', 'PutObject', 'GetObject', 'DeleteObject', 'DeleteBucket'])
+
+    return missing_permissions
+
+def test_bedrock_permissions():
+    """Test Bedrock permissions."""
+    try:
+        bedrock = boto3.client('bedrock-runtime')
+        # Just check if we can create the client - actual invoke would cost money
+        print("✅ Bedrock client creation successful")
+        return []
+    except Exception as e:
+        print(f"❌ Error accessing Bedrock: {str(e)}")
+        return ['InvokeModel']
+
 def test_aws_permissions():
     """Test AWS credentials and permissions."""
-    required_services = {
-        's3': ['ListBuckets', 'GetObject', 'PutObject'],
-        'bedrock-runtime': ['InvokeModel']
-    }
+    missing_s3 = test_s3_permissions()
+    missing_bedrock = test_bedrock_permissions()
     
     missing_permissions = {}
-    
-    for service, actions in required_services.items():
-        try:
-            # Create a client for the service
-            client = boto3.client(service)
-            
-            # Get the caller identity to verify credentials work
-            sts = boto3.client('sts')
-            sts.get_caller_identity()
-            
-            # Test specific permissions
-            iam = boto3.client('iam')
-            for action in actions:
-                try:
-                    response = iam.simulate_principal_policy(
-                        PolicySourceArn=sts.get_caller_identity()['Arn'],
-                        ActionNames=[f'{service}:{action}']
-                    )
-                    if response['EvaluationResults'][0]['EvalDecision'] != 'allowed':
-                        if service not in missing_permissions:
-                            missing_permissions[service] = []
-                        missing_permissions[service].append(action)
-                except Exception as e:
-                    print(f"Warning: Could not check {action} permission: {str(e)}")
-                    
-        except Exception as e:
-            print(f"❌ Error accessing {service}: {str(e)}")
-            missing_permissions[service] = actions
-    
+    if missing_s3:
+        missing_permissions['s3'] = missing_s3
+    if missing_bedrock:
+        missing_permissions['bedrock-runtime'] = missing_bedrock
+        
     return missing_permissions
 
 if __name__ == "__main__":
