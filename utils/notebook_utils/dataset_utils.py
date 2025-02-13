@@ -36,8 +36,15 @@ def download_dataset(dataset_name: str, output_dir: Path) -> Path:
     print(f"Downloading {dataset_name}...")
     dataset_info = DATASET_REGISTRY[dataset_name]
     
-    # Create dataset directory
-    dataset_dir = output_dir / dataset_name.lower()
+    # Map dataset names to directory names
+    dir_name_map = {
+        'OriginOfCovid19Dataset': 'covid19_origin',
+        'PaulGrahamEssaysDataset': 'paul_graham_essays'
+    }
+    
+    # Create dataset directory using consistent naming
+    dir_name = dir_name_map.get(dataset_name, dataset_name.lower())
+    dataset_dir = output_dir / dir_name
     dataset_dir.mkdir(parents=True, exist_ok=True)
     
     # Download dataset with proper directory
