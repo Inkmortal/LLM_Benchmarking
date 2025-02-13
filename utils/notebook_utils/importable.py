@@ -29,8 +29,17 @@ def notebook_to_module(notebook_path: str, module_name: Optional[str] = None) ->
     """
     # Resolve and validate path
     nb_path = Path(notebook_path)
+    
+    # Try project root if path doesn't exist
     if not nb_path.exists():
-        raise FileNotFoundError(f"Notebook not found: {notebook_path}")
+        # Look for notebook in sys.path directories
+        for path in sys.path:
+            project_path = Path(path) / notebook_path
+            if project_path.exists():
+                nb_path = project_path
+                break
+        else:
+            raise FileNotFoundError(f"Notebook not found: {notebook_path} (searched in current directory and sys.path)")
     
     # Default module name to notebook filename
     if module_name is None:

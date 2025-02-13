@@ -4,6 +4,7 @@ import sys
 import subprocess
 import pkg_resources
 from pathlib import Path
+from tqdm import tqdm
 
 def install_requirements(requirements_file: str):
     """Install packages from requirements file if not already installed."""
@@ -14,26 +15,36 @@ def install_requirements(requirements_file: str):
     missing = [pkg for pkg in requirements if pkg.split('==')[0] not in installed]
     
     if missing:
-        print("📦 Installing packages...")
-        try:
-            # Capture output to suppress verbose pip messages
-            result = subprocess.run(
-                [sys.executable, '-m', 'pip', 'install', '--quiet'] + missing,
-                capture_output=True,
-                text=True
-            )
-            if result.returncode == 0:
-                print("✅ Installation complete!")
-            else:
-                print("❌ Installation failed with errors:")
-                # Only show error messages, not the full output
-                for line in result.stderr.split('\n'):
-                    if 'ERROR:' in line:
-                        print(f"  {line.strip()}")
-        except Exception as e:
-            print(f"❌ Installation failed: {str(e)}")
+        print("📦 Installing missing packages...")
+        
+        for package in missing:
+            print(f"\nInstalling {package}...")
+            try:
+                # Create progress bar for current package
+                with tqdm(total=1, desc=f"Progress", leave=False) as pbar:
+                    result = subprocess.run(
+                        [sys.executable, '-m', 'pip', 'install', '--progress-bar', 'off', package],
+                        capture_output=True,
+                        text=True
+                    )
+                    pbar.update(1)  # Complete the progress bar
+                    
+                if result.returncode != 0:
+                    print(f"❌ Failed to install {package}:")
+                    for line in result.stderr.split('\n'):
+                        if 'ERROR:' in line:
+                            print(f"  {line.strip()}")
+                    return False
+                    
+            except Exception as e:
+                print(f"❌ Installation failed for {package}: {str(e)}")
+                return False
+                
+        print("\n✅ All packages installed successfully!")
+        return True
     else:
         print("✅ All required packages are already installed!")
+        return True
 
 def setup_directories():
     """Create necessary directories if they don't exist."""

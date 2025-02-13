@@ -87,6 +87,7 @@ Testing and optimizing baseline RAG implementation with Covid-19 dataset while p
 - Added batch processing capabilities
 - Enhanced visualization tools
 - Updated documentation structure
+- Fixed notebook_to_module path resolution to search sys.path
 
 ### Environment Updates
 - Verified AWS credentials
