@@ -40,8 +40,8 @@ def download_dataset(dataset_name: str, output_dir: Path) -> Path:
     dataset_dir = output_dir / dataset_name.lower()
     dataset_dir.mkdir(parents=True, exist_ok=True)
     
-    # Download dataset
-    dataset, documents = download_llama_dataset(dataset_name)
+    # Download dataset with proper directory
+    dataset, documents = download_llama_dataset(dataset_name, str(dataset_dir))
     
     # Save dataset
     dataset.save_json(str(dataset_dir / "rag_dataset.json"))
