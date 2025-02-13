@@ -16,6 +16,7 @@ def install_requirements(requirements_file: str):
     
     if missing:
         print("📦 Installing missing packages...")
+        print(f"[DEBUG] Found {len(missing)} missing packages")
         
         for package in missing:
             print(f"\nInstalling {package}...")
@@ -34,16 +35,20 @@ def install_requirements(requirements_file: str):
                     for line in result.stderr.split('\n'):
                         if 'ERROR:' in line:
                             print(f"  {line.strip()}")
+                    print("[DEBUG] Returning False due to non-zero return code")
                     return False
                     
             except Exception as e:
                 print(f"❌ Installation failed for {package}: {str(e)}")
+                print("[DEBUG] Returning False due to exception")
                 return False
                 
         print("\n📦 Successfully installed all missing packages!")
+        print("[DEBUG] Returning True after installing packages")
         return True
     else:
         print("📦 All required packages are already installed!")
+        print("[DEBUG] Returning True as no packages need installing")
         return True
 
 def setup_directories():
