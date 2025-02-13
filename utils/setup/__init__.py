@@ -20,31 +20,31 @@ def install_requirements(requirements_file: str):
         print("📦 Installing missing packages...")
         print(f"[DEBUG] Found {len(missing)} missing packages")
         
-        for package in missing:
-            print(f"\nInstalling {package}...")
-            try:
-                # Create progress bar for current package
-                with tqdm(total=1, desc=f"Progress", leave=False) as pbar:
+        with tqdm(total=len(missing), desc="Installing packages", unit="pkg") as pbar:
+            for package in missing:
+                try:
                     result = subprocess.run(
                         [sys.executable, '-m', 'pip', 'install', '--progress-bar', 'off', package],
                         capture_output=True,
                         text=True
                     )
-                    pbar.update(1)  # Complete the progress bar
                     
-                if result.returncode != 0:
-                    print(f"❌ Failed to install {package}:")
-                    for line in result.stderr.split('\n'):
-                        if 'ERROR:' in line:
-                            print(f"  {line.strip()}")
-                    print("[DEBUG] Returning False due to non-zero return code")
+                    if result.returncode != 0:
+                        print(f"\n❌ Failed to install {package}:")
+                        for line in result.stderr.split('\n'):
+                            if 'ERROR:' in line:
+                                print(f"  {line.strip()}")
+                        print("[DEBUG] Returning False due to non-zero return code")
+                        return False
+                    
+                    pbar.set_postfix_str(f"Installed {package}")
+                    pbar.update(1)
+                        
+                except Exception as e:
+                    print(f"\n❌ Installation failed for {package}: {str(e)}")
+                    print("[DEBUG] Returning False due to exception")
                     return False
-                    
-            except Exception as e:
-                print(f"❌ Installation failed for {package}: {str(e)}")
-                print("[DEBUG] Returning False due to exception")
-                return False
-                
+        
         print("\n📦 Successfully installed all missing packages!")
         print("[DEBUG] Returning True after installing packages")
         return True
