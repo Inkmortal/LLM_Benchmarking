@@ -21,7 +21,8 @@ langchain
 jupyter
 nbformat
 ipykernel
-tqdm  # Progress bars for long-running operations
+# Progress bars for long-running operations
+tqdm
 
 # Visualization
 # Interactive plots

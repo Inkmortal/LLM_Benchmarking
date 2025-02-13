@@ -1,0 +1,121 @@
+# Project Conventions & Patterns
+
+## Code Organization
+
+### 1. Notebook Structure
+- Implementation notebooks split into ingestion and core logic
+- Evaluation notebooks follow template structure
+- Utility functions extracted to Python modules
+- Documentation in markdown cells
+
+### 2. Directory Conventions
+- Datasets stored in `datasets/rag_evaluation/`
+- Implementations in `rag_implementations/`
+- Evaluation pipelines in `evaluation_pipelines/`
+- Shared utilities in `utils/`
+
+### 3. Git Practices
+- Vector stores and datasets are git-ignored
+- Documentation changes tracked
+- Notebooks committed without output cells
+- Large files handled via git-lfs
+
+## Development Patterns
+
+### 1. AWS Integration
+- Always use environment variables for credentials
+- Implement rate limiting for API calls
+- Handle service-specific errors
+- Cache results where possible
+
+### 2. Dataset Handling
+- Download datasets through llama-index
+- Cache locally to avoid re-downloads
+- Track source files separately
+- Preserve metadata during processing
+
+### 3. Evaluation Process
+- Use standardized templates
+- Run benchmarks in batches
+- Generate visual reports
+- Document findings inline
+
+## Common Pitfalls
+
+### 1. AWS Services
+- Rate limits can affect batch processing
+- OpenSearch needs proper index settings
+- Bedrock requires specific model IDs
+- Neptune setup requires manual steps
+
+### 2. Performance
+- Large batches can trigger rate limits
+- Caching improves repeated operations
+- Memory usage grows with dataset size
+- Async operations need proper handling
+
+### 3. Documentation
+- Keep notebooks self-contained
+- Update docs with code changes
+- Include usage examples
+- Document error scenarios
+
+## User Preferences
+
+### 1. Development Environment
+- Use Conda for environment management
+- Jupyter notebooks for development
+- VSCode as primary editor
+- PowerShell for CLI operations
+
+### 2. Code Style
+- Type hints where beneficial
+- Comprehensive docstrings
+- Clear error messages
+- Modular function design
+
+### 3. Documentation
+- Markdown for documentation
+- Mermaid for diagrams
+- Emoji for status indicators
+- Tables for structured data
+
+## Learned Patterns
+
+### 1. Effective Practices
+- Split complex notebooks into stages
+- Cache intermediate results
+- Use progress bars for long operations
+- Implement proper error handling
+
+### 2. Optimization Tips
+- Batch similar operations
+- Cache embeddings
+- Use async for API calls
+- Monitor resource usage
+
+### 3. Testing Strategies
+- Start with small datasets
+- Validate results incrementally
+- Monitor performance metrics
+- Document edge cases
+
+## Project-Specific Notes
+
+### 1. RAG Implementation
+- Prefer batch operations
+- Cache embeddings locally
+- Handle rate limits gracefully
+- Log important operations
+
+### 2. Evaluation
+- Use RAGAs metrics consistently
+- Generate comprehensive reports
+- Track performance over time
+- Document anomalies
+
+### 3. Documentation
+- Keep docs updated with changes
+- Include practical examples
+- Document known issues
+- Track resolved problems
