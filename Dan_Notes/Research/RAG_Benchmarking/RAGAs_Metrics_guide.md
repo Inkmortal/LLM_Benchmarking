@@ -17,7 +17,7 @@ These metrics evaluate the effectiveness of systems that combine retrieval mecha
   ```python
   from ragas.metrics import ContextPrecision
   
-  metric = ContextPrecision()
+  metric = ContextPrecision(llm=evaluator_llm)
   score = await metric.single_turn_ascore(sample)
   ```
 
@@ -29,7 +29,7 @@ These metrics evaluate the effectiveness of systems that combine retrieval mecha
   ```python
   from ragas.metrics import ContextRecall
   
-  metric = ContextRecall()
+  metric = ContextRecall(llm=evaluator_llm)
   score = await metric.single_turn_ascore(sample)
   ```
 
@@ -41,7 +41,7 @@ These metrics evaluate the effectiveness of systems that combine retrieval mecha
   ```python
   from ragas.metrics import ContextEntityRecall
   
-  metric = ContextEntityRecall()
+  metric = ContextEntityRecall(llm=evaluator_llm)
   score = await metric.single_turn_ascore(sample)
   ```
 
@@ -53,7 +53,7 @@ These metrics evaluate the effectiveness of systems that combine retrieval mecha
   ```python
   from ragas.metrics import NoiseSensitivity
   
-  metric = NoiseSensitivity()
+  metric = NoiseSensitivity(llm=evaluator_llm)
   score = await metric.single_turn_ascore(sample)
   ```
 
@@ -65,7 +65,7 @@ These metrics evaluate the effectiveness of systems that combine retrieval mecha
   ```python
   from ragas.metrics import ResponseRelevancy
   
-  metric = ResponseRelevancy()
+  metric = ResponseRelevancy(llm=evaluator_llm, embeddings=evaluator_embeddings)
   score = await metric.single_turn_ascore(sample)
   ```
 
@@ -95,7 +95,7 @@ These metrics help evaluate the correctness of SQL-related responses.
   ```python
   from ragas.metrics import ExecutionBasedDatacompyScore
   
-  metric = ExecutionBasedDatacompyScore()
+  metric = ExecutionBasedDatacompyScore(llm=evaluator_llm)
   score = await metric.single_turn_ascore(sample)
   ```
 
@@ -107,7 +107,7 @@ These metrics help evaluate the correctness of SQL-related responses.
   ```python
   from ragas.metrics import SQLQueryEquivalence
   
-  metric = SQLQueryEquivalence()
+  metric = SQLQueryEquivalence(llm=evaluator_llm)
   score = await metric.single_turn_ascore(sample)
   ```
 
@@ -135,7 +135,7 @@ These metrics help evaluate the correctness of SQL-related responses.
   ```python
   from ragas.metrics import ToolCallAccuracy
   
-  metric = ToolCallAccuracy()
+  metric = ToolCallAccuracy(llm=evaluator_llm)
   score = await metric.multi_turn_ascore(sample)
   ```
 
@@ -159,7 +159,7 @@ These metrics help evaluate the correctness of SQL-related responses.
   ```python
   from ragas.metrics import SemanticSimilarity
   
-  metric = SemanticSimilarity()
+  metric = SemanticSimilarity(embeddings=evaluator_embeddings)
   score = await metric.single_turn_ascore(sample)
   ```
 

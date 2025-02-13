@@ -76,11 +76,11 @@ def test_imports():
         # RAGAS packages
         from ragas import evaluate
         from ragas.metrics import (
-            response_relevancy,
-            context_precision,
-            context_recall,
-            faithfulness,
-            ContextEntityRecall  # Using correct class name
+            ResponseRelevancy,
+            ContextPrecision,
+            ContextRecall,
+            Faithfulness,
+            ContextEntityRecall
         )
         print("✅ RAGAs evaluation framework imported successfully!")
         
