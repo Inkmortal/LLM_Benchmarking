@@ -90,7 +90,8 @@ Testing and optimizing baseline RAG implementation with Covid-19 dataset while p
 - Fixed notebook_to_module path resolution to search sys.path
 - Fixed setup.ipynb success message handling
 - Updated baseline_rag_benchmark.ipynb to use absolute paths
-- Standardized install_requirements output messages
+- Improved install_requirements output messages for clarity
+- Updated Python version in setup.ipynb to 3.10.0
 
 ### Environment Updates
 - Verified AWS credentials

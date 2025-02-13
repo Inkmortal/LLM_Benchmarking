@@ -40,11 +40,10 @@ def install_requirements(requirements_file: str):
                 print(f"❌ Installation failed for {package}: {str(e)}")
                 return False
                 
-        print("\n✅ Installation complete!")
+        print("\n📦 Successfully installed all missing packages!")
         return True
     else:
-        print("📦 Checking packages...")
-        print("✅ Installation complete!")
+        print("📦 All required packages are already installed!")
         return True
 
 def setup_directories():
