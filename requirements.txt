@@ -33,3 +33,7 @@ asyncio
 
 # Type hints
 typing-extensions
+
+# Dependencies with specific versions to resolve conflicts
+dill>=0.3.9
+multiprocess>=0.70.17
