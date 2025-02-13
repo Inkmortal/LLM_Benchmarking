@@ -8,9 +8,11 @@ from tqdm import tqdm
 
 def install_requirements(requirements_file: str):
     """Install packages from requirements file if not already installed."""
+    print("[DEBUG] Starting install_requirements function")
     with open(requirements_file) as f:
         requirements = [line.strip() for line in f if line.strip() and not line.startswith('#')]
     
+    print(f"[DEBUG] Found {len(requirements)} requirements in file")
     installed = {pkg.key for pkg in pkg_resources.working_set}
     missing = [pkg for pkg in requirements if pkg.split('==')[0] not in installed]
     
