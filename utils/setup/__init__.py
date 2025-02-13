@@ -20,7 +20,13 @@ def install_requirements(requirements_file: str):
         print("📦 Installing missing packages...")
         print(f"[DEBUG] Found {len(missing)} missing packages")
         
-        with tqdm(total=len(missing), desc="Installing packages", unit="pkg") as pbar:
+        # Configure progress bar style
+        with tqdm(
+            total=len(missing),
+            desc="Installing packages",
+            unit="pkg",
+            bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}{postfix}]"
+        ) as pbar:
             for package in missing:
                 try:
                     result = subprocess.run(

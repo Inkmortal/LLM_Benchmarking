@@ -74,11 +74,16 @@ def load_labeled_dataset(dataset_dir: Path, download_if_missing: bool = True) ->
     # Check if dataset exists
     if not dataset_file.exists() or not source_dir.exists():
         if download_if_missing:
-            dataset_name = dataset_dir.name.upper()
-            if dataset_name.endswith('DATASET'):
-                dataset_name = dataset_name[:-7]  # Remove 'DATASET' suffix
+            # Extract base name and convert to proper format
+            base_name = dataset_dir.name.lower()
+            if base_name == "covid19_origin":
+                dataset_name = "OriginOfCovid19Dataset"
+            else:
+                # Default case - convert snake_case to PascalCase and add Dataset suffix
+                parts = base_name.split('_')
+                dataset_name = ''.join(word.capitalize() for word in parts) + 'Dataset'
             print(f"Dataset not found. Downloading {dataset_name}...")
-            download_dataset(dataset_name + 'Dataset', dataset_dir.parent)
+            download_dataset(dataset_name, dataset_dir.parent)
         else:
             raise FileNotFoundError(f"Dataset not found at {dataset_dir}")
     

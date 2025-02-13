@@ -93,6 +93,7 @@ Testing and optimizing baseline RAG implementation with Covid-19 dataset while p
 - Improved install_requirements output messages for clarity
 - Updated Python version in setup.ipynb to 3.10.0
 - Added single-line progress bar for package installations
+- Improved progress bar styling to remove color artifacts
 
 ### Environment Updates
 - Verified AWS credentials
