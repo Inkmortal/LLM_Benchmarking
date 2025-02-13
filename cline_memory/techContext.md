@@ -26,6 +26,18 @@
   - Cosine similarity scoring
   - Batch document ingestion
   - Metadata storage
+- Configuration:
+  - Engine: OpenSearch 2.11
+  - Instance: t3.small.search
+  - Storage: 10GB gp3 EBS
+  - Single node (no replication)
+  - Public access with IAM auth
+- Management:
+  - Automatic domain creation
+  - Default cleanup enabled
+  - Duplicate document detection
+  - Cost monitoring
+  - Endpoint auto-detection (VPC/non-VPC)
 
 #### Amazon Neptune (Planned)
 - Purpose: Graph database for GraphRAG
@@ -44,10 +56,12 @@
   - Configurable chunking
   - Metadata preservation
   - Batch processing support
+  - Duplicate detection
 - Vector Storage:
   - OpenSearch integration
   - Embedding caching
   - Similarity search optimization
+  - Resource cleanup
 - Response Generation:
   - Context retrieval
   - Prompt engineering
@@ -105,6 +119,7 @@
     - API call monitoring
     - Memory usage tracking
     - Processing time logs
+    - OpenSearch cost tracking
   - Response Timing:
     - Query latency
     - Context retrieval speed
@@ -158,6 +173,7 @@
    - Automated testing
    - Performance monitoring
    - Resource optimization
+   - Cost tracking
 
 ## System Requirements
 - AWS account with service access
@@ -165,3 +181,4 @@
 - Sufficient storage for datasets
 - Memory for batch processing
 - Network access for API calls
+- OpenSearch domain capacity

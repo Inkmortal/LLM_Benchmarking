@@ -1,285 +1,139 @@
-# System Patterns and Architecture
+# System Patterns
 
-## Code Organization
+## Architecture Patterns
 
-### Directory Structure
-```
-project/
-├── datasets/
-│   └── rag_evaluation/
-│       ├── labeled/
-│       └── unlabeled/
-├── development/
-│   └── notebooks/
-├── evaluation_pipelines/
-│   └── rag_evaluations/
-├── rag_implementations/
-│   └── baseline_rag/
-└── utils/
-    ├── aws/
-    ├── metrics/
-    ├── notebook_utils/
-    ├── setup/
-    └── visualization/
-```
+### RAG Implementation Pattern
+- Core Components:
+  1. Document Processor
+  2. Vector Store (OpenSearch)
+  3. LLM Interface (Bedrock)
+- Workflow:
+  1. Process and embed documents
+  2. Store vectors and metadata
+  3. Query similar contexts
+  4. Generate responses
 
-### Implementation Patterns
-1. Notebook Organization
-   - Split implementation into ingestion and core logic
-   - Follow evaluation template structure
-   - Extract utilities to Python modules
-   - Document with markdown cells
+### Resource Management Pattern
+- OpenSearch Domain:
+  1. Automatic creation with standard config
+  2. Default cleanup after benchmarking
+  3. Cost warning notifications
+  4. Duplicate document prevention
+  5. Endpoint auto-detection
+- Cleanup Strategy:
+  1. Default to cleanup enabled
+  2. Optional preservation
+  3. Clear cleanup instructions
+  4. Cost awareness
 
-2. Code Modularity
-   - Separate concerns by functionality
-   - Implement standardized interfaces
-   - Use type hints where beneficial
-   - Maintain comprehensive docstrings
+### Data Management Pattern
+- Document Processing:
+  1. Automatic dataset downloading
+  2. Duplicate detection
+  3. Metadata preservation
+  4. Batch processing
+- Vector Storage:
+  1. Efficient indexing
+  2. Similarity search
+  3. Resource cleanup
+  4. Cost optimization
 
-3. Development Workflow
-   - Local development first
-   - SageMaker deployment ready
-   - Automated environment setup
-   - Consistent error handling
+## Implementation Patterns
 
-## Architectural Patterns
+### Benchmarking Pattern
+- Setup Phase:
+  1. Environment configuration
+  2. Resource initialization
+  3. Dataset preparation
+- Execution Phase:
+  1. Document ingestion
+  2. Evaluation runs
+  3. Result collection
+- Cleanup Phase:
+  1. Resource termination
+  2. Result preservation
+  3. Cost reporting
 
-### RAG Implementation
-1. Document Processing
-   ```python
-   class BaselineRAG:
-       def ingest_documents(self, documents: List[Dict[str, Any]], batch_size: int = 100):
-           """Ingest documents into vector store with batching
-           
-           Args:
-               documents: List of dicts with 'content' and optional 'metadata'
-               batch_size: Number of documents per batch
-           """
-           # Generate embeddings
-           # Store in OpenSearch with metadata
-           # Handle batching for performance
-   ```
+### Error Handling Pattern
+- Resource Errors:
+  1. Graceful fallbacks
+  2. Clear error messages
+  3. Recovery procedures
+- Data Errors:
+  1. Validation checks
+  2. Format verification
+  3. Duplicate handling
 
-2. Vector Storage and Search
-   ```python
-   class BaselineRAG:
-       def _create_index_if_not_exists(self):
-           """Create OpenSearch index with KNN vector mapping"""
-           mapping = {
-               "mappings": {
-                   "properties": {
-                       "content": {"type": "text"},
-                       "metadata": {"type": "object"},
-                       "embedding": {
-                           "type": "knn_vector",
-                           "dimension": 1024
-                       }
-                   }
-               }
-           }
-           
-       def semantic_search(self, query: str, k: int = 3):
-           """Search using cosine similarity"""
-           # Generate query embedding
-           # Use script_score for cosine similarity
-           # Return top-k matches with content and metadata
-   ```
+### Cost Management Pattern
+- Resource Lifecycle:
+  1. Default to cleanup
+  2. Clear cost warnings
+  3. Usage monitoring
+  4. Automatic termination
+- Optimization:
+  1. Resource sharing
+  2. Batch processing
+  3. Caching strategies
+  4. Size limitations
 
-3. Response Generation
-   ```python
-   class BaselineRAG:
-       def generate_response(self, query: str, context: List[Dict[str, Any]]):
-           """Generate response using Claude"""
-           # Format context and query into prompt
-           # Call Claude with appropriate parameters
-           # Return formatted response
-           
-       def query(self, query: str, k: int = 3):
-           """Complete RAG pipeline"""
-           # Get relevant documents
-           # Generate response
-           # Return query, context, and response
-   ```
+## Development Patterns
 
-### Evaluation Framework
-1. Metrics Pipeline
-   ```python
-   class RAGMetricsEvaluator:
-       def __init__(self, batch_size: int = 20, sleep_time: int = 1):
-           """Initialize with rate limiting"""
-           # Set up RAGAs metrics:
-           # - Faithfulness
-           # - Context Precision
-           # - Response Relevancy
-           # - Context Recall
-           # - Context Entity Recall
-           # - Noise Sensitivity
-           
-       async def evaluate_labeled(self, queries, contexts, generated_answers, reference_answers):
-           """Evaluate with ground truth"""
-           # Run comprehensive metrics suite
-           # Handle batching and rate limits
-           # Return detailed scores
-           
-       async def evaluate_unlabeled(self, queries, contexts, generated_answers):
-           """Evaluate without ground truth"""
-           # Run subset of applicable metrics
-           # Focus on response quality
-           # Return available scores
-   ```
+### Testing Pattern
+- Unit Tests:
+  1. Core functionality
+  2. Error handling
+  3. Edge cases
+- Integration Tests:
+  1. Component interaction
+  2. Resource management
+  3. End-to-end flows
 
-2. Visualization System
-   ```python
-   class BenchmarkVisualizer:
-       def plot_comparison(self, data, comparison_type, plot_type, title):
-           """Create comparison visualizations"""
-           # Support multiple plot types:
-           # - Bar charts
-           # - Radar plots
-           # - Time series
-           # Format for clear comparison
-   ```
+### Documentation Pattern
+- Code Documentation:
+  1. Function descriptions
+  2. Parameter details
+  3. Usage examples
+- System Documentation:
+  1. Architecture overview
+  2. Setup instructions
+  3. Cost considerations
+  4. Resource management
+
+### Deployment Pattern
+- Local Development:
+  1. Environment setup
+  2. Code testing
+  3. Resource simulation
+- SageMaker Deployment:
+  1. Notebook configuration
+  2. Resource provisioning
+  3. Cost monitoring
 
 ## Best Practices
 
-### AWS Integration
-1. Error Handling
-   ```python
-   try:
-       response = bedrock.invoke_model(...)
-   except ClientError as e:
-       handle_aws_error(e)
-   ```
+### Resource Management
+1. Always enable cleanup by default
+2. Provide clear cost warnings
+3. Implement duplicate detection
+4. Monitor resource usage
+5. Document cleanup procedures
 
-2. Rate Limiting
-   ```python
-   @rate_limit(calls=10, period=1)
-   def make_api_call():
-       # API call implementation
-   ```
+### Error Handling
+1. Graceful degradation
+2. Clear error messages
+3. Recovery procedures
+4. User guidance
 
-3. Resource Management
-   ```python
-   class ResourceManager:
-       def __init__(self):
-           self.initialize_connections()
-           
-       def cleanup(self):
-           self.close_connections()
-   ```
+### Cost Optimization
+1. Resource sharing when possible
+2. Automatic cleanup
+3. Usage monitoring
+4. Size limitations
+5. Batch processing
 
-### Data Management
-1. Dataset Handling
-   ```python
-   class DatasetManager:
-       def download(self):
-           # Cache if not exists
-           # Verify integrity
-           # Return processed data
-   ```
-
-2. Caching Strategy
-   ```python
-   class CacheManager:
-       def get_or_compute(self, key, compute_fn):
-           if key in cache:
-               return cache[key]
-           result = compute_fn()
-           cache[key] = result
-           return result
-   ```
-
-## Implementation Guidelines
-
-### Code Style
-1. Function Design
-   - Clear single responsibility
-   - Descriptive naming
-   - Type hints where helpful
-   - Comprehensive docstrings
-
-2. Error Handling
-   - Specific exception types
-   - Informative error messages
-   - Proper cleanup in finally blocks
-   - Logging for debugging
-
-3. Performance
-   - Batch operations where possible
-   - Caching for expensive operations
-   - Async for I/O-bound tasks
-   - Resource monitoring
-
-### Testing Strategy
-1. Unit Tests
-   - Test core functionality
-   - Mock external services
-   - Check edge cases
-   - Validate error handling
-
-2. Integration Tests
-   - Test service interactions
-   - Verify data flow
-   - Check end-to-end paths
-   - Monitor performance
-
-## Documentation Standards
-
-### Code Documentation
-1. Module Level
-   ```python
-   """
-   Module: document_processor.py
-   Purpose: Handles document processing for RAG
-   Components:
-   - DocumentProcessor: Main processing class
-   - TextCleaner: Text normalization
-   """
-   ```
-
-2. Class Level
-   ```python
-   class DocumentProcessor:
-       """
-       Processes documents for RAG implementation.
-       
-       Attributes:
-           chunk_size (int): Size of text chunks
-           overlap (int): Overlap between chunks
-       
-       Methods:
-           process(): Process documents
-           clean(): Clean text
-       """
-   ```
-
-3. Function Level
-   ```python
-   def process_document(doc: Document) -> List[Chunk]:
-       """
-       Process a single document into chunks.
-       
-       Args:
-           doc (Document): Input document
-           
-       Returns:
-           List[Chunk]: Processed chunks
-           
-       Raises:
-           ProcessingError: If processing fails
-       """
-   ```
-
-### Project Documentation
-1. README Structure
-   - Project overview
-   - Setup instructions
-   - Usage examples
-   - API documentation
-   - Contributing guidelines
-
-2. Notebook Documentation
-   - Purpose and goals
-   - Dependencies
-   - Usage instructions
-   - Example outputs
+### Documentation
+1. Clear setup instructions
+2. Cost implications
+3. Resource management
+4. Usage patterns
+5. Cleanup procedures

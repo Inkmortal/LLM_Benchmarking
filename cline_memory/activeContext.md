@@ -16,6 +16,8 @@ Testing and benchmarking baseline RAG implementation with Covid-19 dataset while
   - Context-aware response generation
   - Comprehensive error handling
   - Rate limiting and resource management
+  - Automatic OpenSearch setup and cleanup
+  - Duplicate document detection
 
 ### Evaluation Framework ✅
 - Metrics System:
@@ -35,6 +37,8 @@ Testing and benchmarking baseline RAG implementation with Covid-19 dataset while
   - Implemented comprehensive evaluation flow
   - Added result saving and visualization
   - Set up performance monitoring
+  - Added automatic OpenSearch domain management
+  - Implemented cost-aware resource cleanup
 
 ## Active Tasks
 1. Baseline RAG Testing:
@@ -43,6 +47,7 @@ Testing and benchmarking baseline RAG implementation with Covid-19 dataset while
    - Identifying performance bottlenecks
    - Testing example queries for qualitative assessment
    - Documenting benchmark results
+   - Monitoring resource usage and costs
 
 2. GraphRAG Development Planning:
    - Designing Neptune database schema
@@ -61,18 +66,23 @@ Testing and benchmarking baseline RAG implementation with Covid-19 dataset while
    - Keeping implementations dataset-agnostic
    - Git-ignoring vector stores and datasets
    - Using local development with SageMaker deployment option
+   - Default to cleaning up resources after benchmarking
+   - Automatic OpenSearch domain management
 
 ## Known Issues & Considerations
 - Rate limiting needed for batch operations
 - Vector store size management required
 - Cache invalidation strategy needed
 - Performance optimization opportunities identified
+- OpenSearch costs need monitoring
+- Domain creation takes 10-15 minutes
 
 ## Next Actions
 1. Complete Covid-19 dataset benchmarking
 2. Begin Neptune setup for GraphRAG
 3. Design hybrid search architecture
 4. Document initial findings
+5. Monitor OpenSearch resource usage
 
 ## Development Notes
 - All implementations maintain dataset agnosticism
@@ -82,3 +92,8 @@ Testing and benchmarking baseline RAG implementation with Covid-19 dataset while
   2. SageMaker notebook deployment
   3. Environment configuration
   4. Benchmark execution
+- Resource management strategy:
+  1. Automatic OpenSearch domain creation
+  2. Default cleanup after benchmarking
+  3. Clear cost warnings for users
+  4. Duplicate document prevention
