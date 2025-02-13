@@ -33,15 +33,15 @@ These metrics evaluate the effectiveness of systems that combine retrieval mecha
   score = await metric.single_turn_ascore(sample)
   ```
 
-### 📌 Context Entities Recall
+### 📌 Context Entity Recall
 - **Purpose**: Evaluates how well entity information is preserved in the retrieved context.
 - **Use Case**: Useful in cases where entity consistency is crucial (e.g., medical or legal applications).
 - **Implementation Example**:
 
   ```python
-  from ragas.metrics import ContextEntitiesRecall
+  from ragas.metrics import ContextEntityRecall
   
-  metric = ContextEntitiesRecall()
+  metric = ContextEntityRecall()
   score = await metric.single_turn_ascore(sample)
   ```
 

@@ -11,7 +11,7 @@ from ragas.metrics import (
     ContextPrecision,
     ResponseRelevancy,
     ContextRecall,
-    ContextEntitiesRecall,
+    ContextEntityRecall,
     NoiseSensitivity
 )
 
@@ -37,7 +37,7 @@ class RAGMetricsEvaluator:
         self.context_precision = ContextPrecision()
         self.response_relevancy = ResponseRelevancy()
         self.context_recall = ContextRecall()
-        self.context_entities_recall = ContextEntitiesRecall()
+        self.context_entities_recall = ContextEntityRecall()
         self.noise_sensitivity = NoiseSensitivity()
         
     async def evaluate_labeled(
