@@ -18,11 +18,14 @@ nbformat
 ipykernel
 
 # AWS service specific
-opensearch-py  # For Amazon OpenSearch
-gremlinpython  # For Amazon Neptune
+# For Amazon OpenSearch
+opensearch-py
+# For Amazon Neptune
+gremlinpython
 
 # Visualization
-plotly  # Interactive plots
+# Interactive plots
+plotly
 
 # Async support
 aiohttp
