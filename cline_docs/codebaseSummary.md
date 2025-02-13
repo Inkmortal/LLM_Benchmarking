@@ -29,15 +29,16 @@ LLM_Benchmarking/
 │   │   └── rag_tuning.ipynb          # Template for single implementation tuning
 │   │
 │   └── rag_evaluations/
-│       ├── dataset_test.ipynb         # Dataset structure examination
-│       └── baseline_rag_benchmark.ipynb # Baseline RAG evaluation
+│       └── baseline_rag_benchmark.ipynb # Baseline RAG evaluation with dataset examination
 │
 └── utils/
     ├── metrics/
-    │   └── rag_metrics.py            # RAG evaluation metrics
+    │   └── rag_metrics.py            # RAG evaluation metrics with RAGAs
     │
     ├── notebook_utils/
-    │   └── importable.py             # Makes notebooks importable as modules
+    │   ├── importable.py             # Makes notebooks importable as modules
+    │   ├── dataset_utils.py          # Dataset downloading and examination
+    │   └── document_utils.py         # Document preprocessing and ingestion
     │
     └── visualization/
         └── comparison_plots.py       # Visualization utilities
@@ -67,12 +68,26 @@ LLM_Benchmarking/
   - Batch processing
 
 ### 3. Evaluation Framework
-- Comprehensive metrics using RAGAs
+- Comprehensive metrics using RAGAs:
+  - Faithfulness scoring
+  - Context precision and recall
+  - Response relevancy
+  - Context entity recall
+  - Noise sensitivity
 - Support for:
-  - Full dataset evaluation
-  - Sample-based testing
+  - Labeled dataset evaluation
+  - Unlabeled dataset evaluation
+  - Batch processing with rate limiting
   - Custom query testing
-- Results storage and visualization
+- Document preprocessing:
+  - Text cleaning and normalization
+  - Smart chunking with overlap
+  - Metadata preservation
+  - Batch ingestion
+- Results visualization:
+  - Multiple plot types (bar, radar, heatmap)
+  - Automated report generation
+  - Time series support
 
 ## Data Flow
 
