@@ -56,11 +56,6 @@ def setup_directories():
 def test_imports():
     """Test importing all required modules."""
     try:
-        # Core utilities
-        import utils_setup
-        from utils import RAGMetricsEvaluator, BenchmarkVisualizer, notebook_to_module
-        print("✅ Core utilities imported successfully!")
-        
         # Data science packages
         import pandas as pd
         import numpy as np
@@ -83,6 +78,10 @@ def test_imports():
             ContextEntityRecall
         )
         print("✅ RAGAs evaluation framework imported successfully!")
+        
+        # Only import utils after all requirements are installed
+        import utils
+        print("✅ Core utilities imported successfully!")
         
         return True
     except Exception as e:
