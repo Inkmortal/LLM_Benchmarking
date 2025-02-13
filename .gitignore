@@ -19,13 +19,12 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-MANIFEST
 
 # Jupyter Notebook
 .ipynb_checkpoints
-*.ipynb
+*/.ipynb_checkpoints/*
 
-# Environments
+# Environment
 .env
 .venv
 env/
@@ -33,73 +32,33 @@ venv/
 ENV/
 env.bak/
 venv.bak/
-.conda/
-conda-env/
+.python-version
+.conda
 
-# VSCode
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
-*.code-workspace
-
-# PyCharm
+# IDE
 .idea/
-*.iml
-*.iws
-.idea_modules/
-
-# Operating System
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-
-# Data files
-*.csv
-*.dat
-*.log
-*.sqlite
-*.db
-
-# Cache and temporary files
+.vscode/
 *.swp
 *.swo
 *~
-.pytest_cache/
-.coverage
-htmlcov/
-.tox/
-.nox/
-.coverage.*
-coverage.xml
-*.cover
-*.py,cover
-.hypothesis/
 
-# Documentation builds
-docs/_build/
-site/
+# AWS
+.aws/
+aws.config
+aws.credentials
 
-# Distribution / packaging
-.Python
-env/
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
+# Project specific
+results/
+**/results/
+**/graph_store/
+datasets/**/data/
+!datasets/**/dataset_info.md
+
+# Logs
+*.log
+logs/
+**/logs/
+
+# OS
+.DS_Store
+Thumbs.db

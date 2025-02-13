@@ -1,0 +1,32 @@
+# Core dependencies
+pandas
+numpy
+matplotlib
+seaborn
+
+# AWS SDK
+boto3
+
+# RAG and evaluation
+ragas
+llama-index
+langchain
+
+# Jupyter and notebook utilities
+jupyter
+nbformat
+ipykernel
+
+# AWS service specific
+opensearch-py  # For Amazon OpenSearch
+gremlinpython  # For Amazon Neptune
+
+# Visualization
+plotly  # Interactive plots
+
+# Async support
+aiohttp
+asyncio
+
+# Type hints
+typing-extensions

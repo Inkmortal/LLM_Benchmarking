@@ -12,6 +12,127 @@
 
 </div>
 
+## Quick Start
+
+### Prerequisites
+- Python 3.8+
+- Jupyter Lab/Notebook
+- AWS Account with access to:
+  - Amazon Bedrock
+  - Amazon OpenSearch
+  - Amazon Neptune
+  - Amazon S3
+
+### Getting Started
+
+1. Clone the repository:
+```bash
+git clone [repository-url]
+cd LLM_Benchmarking
+```
+
+2. Open and run the setup notebook:
+```bash
+jupyter lab setup.ipynb
+```
+
+The setup notebook will automatically:
+- Install all required dependencies
+- Configure AWS access based on your environment:
+  - For SageMaker: Shows required IAM role permissions
+  - For local: Provides AWS credential setup instructions
+- Test all imports and utilities
+- Create necessary directories
+
+All dependencies will be installed in your current environment and will be available to all notebooks in the project.
+
+### AWS Configuration
+
+#### SageMaker Users
+If you're running in SageMaker, ensure your notebook's IAM role has these permissions:
+- bedrock:InvokeModel
+- opensearch:*
+- neptune-db:*
+- s3:*
+
+The setup notebook will show your role ARN and instructions for adding permissions.
+
+#### Local Users
+If running locally, you can configure AWS access through:
+1. AWS CLI (Recommended): `aws configure`
+2. Environment variables
+3. AWS credentials file
+
+The setup notebook will guide you through the process.
+
+## Usage
+
+### Comparing RAG Implementations
+
+1. Open the comparison notebook:
+```bash
+jupyter lab evaluation_pipelines/templates/rag_comparison.ipynb
+```
+
+2. Update the configuration section with:
+- Your RAG implementations
+- Dataset paths
+- Evaluation metrics
+
+3. Run the notebook cells to:
+- Load implementations
+- Run evaluations
+- Generate visualizations
+- Analyze results
+
+### Tuning RAG Parameters
+
+1. Open the tuning notebook:
+```bash
+jupyter lab evaluation_pipelines/templates/rag_tuning.ipynb
+```
+
+2. Configure:
+- Implementation to tune
+- Parameter grid
+- Evaluation datasets
+- Metric weights
+
+3. Run the notebook to:
+- Test parameter combinations
+- Find optimal settings
+- Validate results
+
+## Project Structure
+
+```
+LLM_Benchmarking/
+├── datasets/                          # Evaluation datasets
+│   ├── rag_evaluation/
+│   │   ├── labeled/                  # Labeled datasets
+│   │   └── unlabeled/               # Unlabeled datasets
+│   └── sql_evaluation/              # Future SQL datasets
+│
+├── rag_implementations/              # RAG implementations
+│   ├── baseline_rag/
+│   │   ├── implementation.ipynb
+│   │   └── ingestion.ipynb
+│   └── graph_rag/
+│       ├── implementation.ipynb
+│       └── ingestion.ipynb
+│
+├── evaluation_pipelines/             # Evaluation notebooks
+│   ├── templates/                    # Reusable templates
+│   └── rag_evaluations/             # Specific evaluations
+│
+└── utils/                           # Shared utilities
+    ├── metrics/                     # Evaluation metrics
+    ├── visualization/               # Plotting utilities
+    └── notebook_utils/              # Notebook helpers
+```
+
+---
+
 <br>
 
 > "Understanding the nuances of LLM implementations through systematic evaluation and analysis"
