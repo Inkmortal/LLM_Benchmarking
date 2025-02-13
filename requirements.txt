@@ -4,24 +4,24 @@ numpy
 matplotlib
 seaborn
 
-# AWS SDK
+# AWS SDK and services
 boto3
+requests-aws4auth
+opensearch-py
+gremlinpython
 
 # RAG and evaluation
 ragas
 llama-index
+llama-index-llms-openai
+llama-index-readers-wikipedia
 langchain
 
 # Jupyter and notebook utilities
 jupyter
 nbformat
 ipykernel
-
-# AWS service specific
-# For Amazon OpenSearch
-opensearch-py
-# For Amazon Neptune
-gremlinpython
+tqdm  # Progress bars for long-running operations
 
 # Visualization
 # Interactive plots

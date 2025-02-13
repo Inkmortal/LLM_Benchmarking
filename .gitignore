@@ -54,6 +54,12 @@ results/
 datasets/**/data/
 !datasets/**/dataset_info.md
 
+# Downloaded datasets and vector stores
+datasets/rag_evaluation/labeled/*/source_files/
+datasets/rag_evaluation/labeled/*/rag_dataset.json
+*.opensearch/
+*.neptune/
+
 # Logs
 *.log
 logs/
