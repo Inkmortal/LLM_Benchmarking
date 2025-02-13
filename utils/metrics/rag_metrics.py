@@ -7,12 +7,12 @@ from typing import List, Dict, Any, Optional
 import pandas as pd
 from ragas import evaluate
 from ragas.metrics import (
-    faithfulness,
-    context_precision,
-    answer_relevance,
-    answer_correctness,
-    context_recall,
-    context_relevancy
+    Faithfulness,
+    ContextPrecision,
+    ResponseRelevancy,
+    ContextRecall,
+    ContextEntitiesRecall,
+    NoiseSensitivity
 )
 
 class RAGMetricsEvaluator:
@@ -31,6 +31,14 @@ class RAGMetricsEvaluator:
         """
         self.batch_size = batch_size
         self.sleep_time = sleep_time
+        
+        # Initialize metrics
+        self.faithfulness = Faithfulness()
+        self.context_precision = ContextPrecision()
+        self.response_relevancy = ResponseRelevancy()
+        self.context_recall = ContextRecall()
+        self.context_entities_recall = ContextEntitiesRecall()
+        self.noise_sensitivity = NoiseSensitivity()
         
     async def evaluate_labeled(
         self,
@@ -57,10 +65,11 @@ class RAGMetricsEvaluator:
             answers=generated_answers,
             ground_truths=reference_answers,
             metrics=[
-                faithfulness,
-                context_precision,
-                answer_relevance,
-                answer_correctness
+                self.faithfulness,
+                self.context_precision,
+                self.response_relevancy,
+                self.context_recall,
+                self.context_entities_recall
             ],
             batch_size=self.batch_size,
             sleep_time_in_seconds=self.sleep_time
@@ -89,9 +98,10 @@ class RAGMetricsEvaluator:
             contexts=contexts,
             answers=generated_answers,
             metrics=[
-                faithfulness,
-                context_precision,
-                context_relevancy
+                self.faithfulness,
+                self.context_precision,
+                self.response_relevancy,
+                self.noise_sensitivity
             ],
             batch_size=self.batch_size,
             sleep_time_in_seconds=self.sleep_time
