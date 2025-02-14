@@ -7,6 +7,34 @@
 
 ## Recent Changes
 
+### Document Processing Pipeline
+1. Code Organization:
+   - implementation.ipynb: Core RAG functionality
+     - Vector embeddings (Cohere)
+     - OpenSearch operations
+     - Query processing
+     - Response generation (Claude)
+   - ingestion.ipynb: Document processing
+     - Langchain document loaders
+     - Text chunking
+     - Metadata handling
+     - Batch processing
+   - document_utils.py: Utility functions
+     - Used by benchmark notebook
+     - Basic text processing
+
+2. Flow:
+   - Benchmark notebook loads dataset
+   - Calls BaselineRAG from implementation.ipynb
+   - BaselineRAG uses ingestion.ipynb for document processing
+   - ingestion.ipynb uses Langchain for robust file handling
+
+3. Separation of Concerns:
+   - Keep files under 200 lines
+   - implementation.ipynb focuses on core RAG
+   - ingestion.ipynb handles document processing
+   - Chunking config passed from implementation to ingestion
+
 ### OpenSearch Management
 1. Created OpenSearchManager utility:
    - Centralized domain management
@@ -41,21 +69,22 @@
 
 ## Active Decisions
 
-### OpenSearch Configuration
-1. Using t3.small.search instances:
-   - Cost-effective for benchmarking
-   - Sufficient for testing
-   - Easy to clean up
+### Document Processing
+1. Use Langchain for robust file handling:
+   - PDF, TXT, DOCX support
+   - Smart text splitting
+   - Metadata preservation
+   - Batch processing
 
-2. Identity-based access:
-   - Works with both roles and users
-   - Automatic detection
-   - Secure by default
+2. Configuration flow:
+   - BaselineRAG stores chunking config
+   - Passed to ingestion notebook
+   - Applied during document processing
 
-3. Verbosity control:
-   - Default to minimal output
-   - Optional detailed logging
-   - Debug information when needed
+3. File Organization:
+   - Split implementation and ingestion
+   - Keep each file focused
+   - Stay under 200 lines
 
 ### Development Workflow
 1. Module Organization:
