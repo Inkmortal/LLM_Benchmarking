@@ -16,17 +16,26 @@ llama-index
 llama-index-llms-openai
 llama-index-readers-wikipedia
 langchain
-langchain-community  # For document loaders
-unstructured[all-docs]  # For handling various document types
-python-magic  # Required by unstructured
-python-magic-bin; sys_platform == 'win32'  # For Windows systems
-pypdf  # For PDF processing
-docx2txt  # For DOCX processing
+
+# Document processing
+# For document loaders
+langchain-community
+# For handling various document types
+unstructured[all-docs]
+# Required by unstructured
+python-magic
+# For Windows systems
+python-magic-bin; sys_platform == 'win32'
+# For PDF processing
+pypdf
+# For DOCX processing
+docx2txt
 
 # Jupyter and notebook utilities
 jupyter
 nbformat
 ipykernel
+
 # Progress bars for long-running operations
 tqdm
 
