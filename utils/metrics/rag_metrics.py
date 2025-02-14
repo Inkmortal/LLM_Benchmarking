@@ -6,7 +6,7 @@ Provides a unified interface for evaluating RAG systems with both labeled and un
 from typing import List, Dict, Any, Optional
 import pandas as pd
 import boto3
-from ragas import evaluate, Dataset
+from ragas import evaluate
 from ragas.metrics import (
     Faithfulness,
     ContextPrecision,
@@ -15,6 +15,7 @@ from ragas.metrics import (
     ContextEntityRecall,
     NoiseSensitivity
 )
+from ragas.evaluation import EvaluationDataset, Sample
 
 class RAGMetricsEvaluator:
     """
@@ -68,13 +69,19 @@ class RAGMetricsEvaluator:
         Returns:
             Dictionary of metric names and scores
         """
-        # Create dataset in RAGAs format
-        dataset = Dataset.from_dict({
-            'question': queries,
-            'contexts': contexts,
-            'answer': generated_answers,
-            'ground_truth': reference_answers
-        })
+        # Create evaluation samples
+        samples = []
+        for q, c, a, r in zip(queries, contexts, generated_answers, reference_answers):
+            sample = Sample(
+                question=q,
+                contexts=c,
+                answer=a,
+                ground_truth=r
+            )
+            samples.append(sample)
+        
+        # Create evaluation dataset
+        dataset = EvaluationDataset(samples=samples)
         
         # Evaluate using RAGAs
         results = await evaluate(
@@ -106,12 +113,18 @@ class RAGMetricsEvaluator:
         Returns:
             Dictionary of metric names and scores
         """
-        # Create dataset in RAGAs format
-        dataset = Dataset.from_dict({
-            'question': queries,
-            'contexts': contexts,
-            'answer': generated_answers
-        })
+        # Create evaluation samples
+        samples = []
+        for q, c, a in zip(queries, contexts, generated_answers):
+            sample = Sample(
+                question=q,
+                contexts=c,
+                answer=a
+            )
+            samples.append(sample)
+        
+        # Create evaluation dataset
+        dataset = EvaluationDataset(samples=samples)
         
         # Evaluate using RAGAs
         results = await evaluate(
@@ -187,13 +200,19 @@ def load_llama_dataset(dataset_path: str) -> tuple:
 # Initialize evaluator
 evaluator = RAGMetricsEvaluator(batch_size=20, sleep_time=1)
 
+# Create samples
+samples = []
+for q, c, a, r in zip(queries, contexts, answers, references):
+    sample = Sample(
+        question=q,
+        contexts=c,
+        answer=a,
+        ground_truth=r
+    )
+    samples.append(sample)
+
 # Create dataset
-dataset = Dataset.from_dict({
-    'question': queries,
-    'contexts': contexts,
-    'answer': generated_answers,
-    'ground_truth': reference_answers
-})
+dataset = EvaluationDataset(samples=samples)
 
 # Evaluate labeled dataset
 labeled_results = await evaluator.evaluate_labeled(
