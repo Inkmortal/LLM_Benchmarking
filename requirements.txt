@@ -16,6 +16,12 @@ llama-index
 llama-index-llms-openai
 llama-index-readers-wikipedia
 langchain
+langchain-community  # For document loaders
+unstructured[all-docs]  # For handling various document types
+python-magic  # Required by unstructured
+python-magic-bin; sys_platform == 'win32'  # For Windows systems
+pypdf  # For PDF processing
+docx2txt  # For DOCX processing
 
 # Jupyter and notebook utilities
 jupyter
@@ -36,5 +42,5 @@ asyncio
 typing-extensions
 
 # Dependencies with specific versions to resolve conflicts
-dill>=0.3.9
-multiprocess>=0.70.17
+dill
+multiprocess
