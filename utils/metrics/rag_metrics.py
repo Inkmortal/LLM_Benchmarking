@@ -3,8 +3,10 @@ RAG evaluation metrics using RAGAs framework and custom implementations.
 Provides a unified interface for evaluating RAG systems with both labeled and unlabeled datasets.
 """
 
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
 import boto3
 from ragas import evaluate
 from ragas.metrics import (
@@ -17,7 +19,11 @@ from ragas.metrics import (
 )
 from ragas.evaluation import EvaluationDataset
 from ragas.dataset_schema import BaseSample
+from ragas.llms import LangchainLLMWrapper
+from ragas.embeddings import LangchainEmbeddingsWrapper
+from langchain_aws import ChatBedrockConverse, BedrockEmbeddings
 from pydantic import BaseModel
+from utils.visualization.comparison_plots import BenchmarkVisualizer
 
 class RagSample(BaseModel):
     """
@@ -35,39 +41,62 @@ class RAGMetricsEvaluator:
     Integrates RAGAs metrics with custom evaluation capabilities.
     """
     
-    def __init__(self, batch_size: int = 20, sleep_time: int = 1):
+    def __init__(
+        self,
+        region_name: str = "us-west-2",
+        llm_model_id: str = "anthropic.claude-3-sonnet-20240229-v1:0",
+        embedding_model_id: str = "cohere.embed-english-v3",
+        temperature: float = 0.0,
+        batch_size: int = 20,
+        sleep_time: int = 1
+    ):
         """
-        Initialize the evaluator with rate limiting parameters.
+        Initialize the evaluator with AWS Bedrock models.
         
         Args:
-            batch_size (int): Number of API calls to batch together
-            sleep_time (int): Seconds to sleep between API calls
+            region_name: AWS region name
+            llm_model_id: Bedrock LLM model ID
+            embedding_model_id: Bedrock embeddings model ID
+            temperature: Temperature for LLM sampling
+            batch_size: Number of API calls to batch together
+            sleep_time: Seconds to sleep between API calls
         """
         self.batch_size = batch_size
         self.sleep_time = sleep_time
         
-        # Initialize AWS Bedrock client for evaluation
-        self.bedrock = boto3.client('bedrock-runtime')
-        self.llm_model_id = "anthropic.claude-3-5-sonnet-20240620-v1:0"
-        self.embedding_model_id = "cohere.embed-english-v3"
+        # Initialize Bedrock models
+        evaluator_llm = LangchainLLMWrapper(ChatBedrockConverse(
+            region_name=region_name,
+            base_url=f"https://bedrock-runtime.{region_name}.amazonaws.com",
+            model=llm_model_id,
+            temperature=temperature,
+        ))
         
-        # Initialize metrics with LLM and embeddings
-        self.faithfulness = Faithfulness(llm=self.llm_model_id)
-        self.context_precision = ContextPrecision(llm=self.llm_model_id)
-        self.response_relevancy = ResponseRelevancy(
-            llm=self.llm_model_id,
-            embeddings=self.embedding_model_id
-        )
-        self.context_recall = ContextRecall(llm=self.llm_model_id)
-        self.context_entities_recall = ContextEntityRecall(llm=self.llm_model_id)
-        self.noise_sensitivity = NoiseSensitivity(llm=self.llm_model_id)
+        evaluator_embeddings = LangchainEmbeddingsWrapper(BedrockEmbeddings(
+            region_name=region_name,
+            model_id=embedding_model_id,
+        ))
+        
+        # Initialize metrics with wrapped models
+        self.metrics = {
+            'context_precision': ContextPrecision(llm=evaluator_llm),
+            'context_recall': ContextRecall(llm=evaluator_llm),
+            'context_entity_recall': ContextEntityRecall(llm=evaluator_llm),
+            'noise_sensitivity': NoiseSensitivity(llm=evaluator_llm),
+            'faithfulness': Faithfulness(llm=evaluator_llm),
+            'answer_relevancy': ResponseRelevancy(llm=evaluator_llm, embeddings=evaluator_embeddings)
+        }
+        
+        # Initialize visualizer
+        self.visualizer = BenchmarkVisualizer()
         
     async def evaluate_labeled(
         self,
         queries: List[str],
         contexts: List[List[str]],
         generated_answers: List[str],
-        reference_answers: List[str]
+        reference_answers: List[str],
+        plot_results: bool = True
     ) -> Dict[str, float]:
         """
         Evaluate RAG system using labeled dataset with reference answers.
@@ -77,6 +106,7 @@ class RAGMetricsEvaluator:
             contexts: List of retrieved contexts for each query
             generated_answers: List of generated answers
             reference_answers: List of ground truth answers
+            plot_results: Whether to plot evaluation results
             
         Returns:
             Dictionary of metric names and scores
@@ -98,21 +128,24 @@ class RAGMetricsEvaluator:
         # Evaluate using RAGAs
         results = await evaluate(
             dataset,
-            metrics=[
-                self.faithfulness,
-                self.context_precision,
-                self.response_relevancy,
-                self.context_recall,
-                self.context_entities_recall
-            ]
+            metrics=list(self.metrics.values())
         )
+        
+        # Convert to DataFrame
+        df = results.to_pandas()
+        
+        # Plot results if requested
+        if plot_results:
+            self.plot_results(df)
+        
         return results
     
     async def evaluate_unlabeled(
         self,
         queries: List[str],
         contexts: List[List[str]],
-        generated_answers: List[str]
+        generated_answers: List[str],
+        plot_results: bool = True
     ) -> Dict[str, float]:
         """
         Evaluate RAG system using unlabeled dataset (no reference answers).
@@ -121,6 +154,7 @@ class RAGMetricsEvaluator:
             queries: List of input queries
             contexts: List of retrieved contexts for each query
             generated_answers: List of generated answers
+            plot_results: Whether to plot evaluation results
             
         Returns:
             Dictionary of metric names and scores
@@ -138,17 +172,90 @@ class RAGMetricsEvaluator:
         # Create evaluation dataset
         dataset = EvaluationDataset(samples=samples)
         
+        # Select metrics that don't require ground truth
+        unlabeled_metrics = [
+            self.metrics['faithfulness'],
+            self.metrics['context_precision'],
+            self.metrics['answer_relevancy'],
+            self.metrics['noise_sensitivity']
+        ]
+        
         # Evaluate using RAGAs
         results = await evaluate(
             dataset,
-            metrics=[
-                self.faithfulness,
-                self.context_precision,
-                self.response_relevancy,
-                self.noise_sensitivity
-            ]
+            metrics=unlabeled_metrics
         )
+        
+        # Convert to DataFrame
+        df = results.to_pandas()
+        
+        # Plot results if requested
+        if plot_results:
+            self.plot_results(df)
+        
         return results
+    
+    def plot_results(
+        self,
+        results: Union[Dict[str, float], pd.DataFrame],
+        title: Optional[str] = None,
+        save_path: Optional[str] = None
+    ) -> None:
+        """
+        Plot evaluation results using different visualizations.
+        
+        Args:
+            results: Evaluation results as dictionary or DataFrame
+            title: Optional plot title
+            save_path: Optional path to save plots
+        """
+        # Convert dictionary to DataFrame if needed
+        df = pd.DataFrame(results) if isinstance(results, dict) else results
+        
+        # Group metrics
+        retrieval_metrics = ['context_precision', 'context_recall', 'context_entity_recall', 'noise_sensitivity_relevant']
+        generation_metrics = ['faithfulness', 'answer_relevancy']
+        
+        # Calculate mean scores
+        retrieval_scores = df[retrieval_metrics].mean()
+        generation_scores = df[generation_metrics].mean()
+        
+        # Create comparison plots
+        plt.figure(figsize=(12, 6))
+        
+        # Plot retrieval metrics
+        plt.subplot(1, 2, 1)
+        sns.barplot(x=retrieval_scores.index, y=retrieval_scores.values)
+        plt.title('Context Retrieval Metrics')
+        plt.xticks(rotation=45)
+        plt.ylim(0, 1)
+        
+        # Plot generation metrics
+        plt.subplot(1, 2, 2)
+        sns.barplot(x=generation_scores.index, y=generation_scores.values)
+        plt.title('Answer Generation Metrics')
+        plt.xticks(rotation=45)
+        plt.ylim(0, 1)
+        
+        plt.tight_layout()
+        
+        # Save plot if path provided
+        if save_path:
+            plt.savefig(save_path, bbox_inches='tight', dpi=300)
+        
+        plt.show()
+        
+        # Print analysis
+        print("\nAnalysis:")
+        print("Context Retrieval:")
+        print(f"- Precision: {retrieval_scores.get('context_precision', 0):.2f} - How many retrieved documents are relevant")
+        print(f"- Recall: {retrieval_scores.get('context_recall', 0):.2f} - How many relevant documents were retrieved")
+        print(f"- Entity Recall: {retrieval_scores.get('context_entity_recall', 0):.2f} - How well important entities are preserved")
+        print(f"- Noise Sensitivity: {retrieval_scores.get('noise_sensitivity_relevant', 0):.2f} - Robustness against irrelevant data")
+        
+        print("\nAnswer Generation:")
+        print(f"- Faithfulness: {generation_scores.get('faithfulness', 0):.2f} - How factual the answers are")
+        print(f"- Relevancy: {generation_scores.get('answer_relevancy', 0):.2f} - How relevant the answers are to questions")
     
     def compare_implementations(
         self,
@@ -210,7 +317,7 @@ def load_llama_dataset(dataset_path: str) -> tuple:
 # Example usage:
 """
 # Initialize evaluator
-evaluator = RAGMetricsEvaluator(batch_size=20, sleep_time=1)
+evaluator = RAGMetricsEvaluator()
 
 # Create samples
 samples = []
