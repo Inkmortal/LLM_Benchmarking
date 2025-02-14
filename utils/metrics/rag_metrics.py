@@ -60,9 +60,9 @@ class RAGMetricsEvaluator:
             Dictionary of metric names and scores
         """
         results = await evaluate(
-            queries=queries,
+            questions=queries,  # RAGAs expects 'questions'
             contexts=contexts,
-            answers=generated_answers,
+            responses=generated_answers,  # RAGAs expects 'responses'
             ground_truths=reference_answers,
             metrics=[
                 self.faithfulness,
@@ -94,9 +94,9 @@ class RAGMetricsEvaluator:
             Dictionary of metric names and scores
         """
         results = await evaluate(
-            queries=queries,
+            questions=queries,  # RAGAs expects 'questions'
             contexts=contexts,
-            answers=generated_answers,
+            responses=generated_answers,  # RAGAs expects 'responses'
             metrics=[
                 self.faithfulness,
                 self.context_precision,
@@ -172,17 +172,17 @@ evaluator = RAGMetricsEvaluator(batch_size=20, sleep_time=1)
 
 # Evaluate labeled dataset
 labeled_results = await evaluator.evaluate_labeled(
-    queries=queries,
+    queries=queries,  # Will be passed as 'questions' to RAGAs
     contexts=contexts,
-    generated_answers=baseline_answers,
-    reference_answers=reference_answers
+    generated_answers=responses,  # Will be passed as 'responses' to RAGAs
+    reference_answers=ground_truths
 )
 
 # Evaluate unlabeled dataset
 unlabeled_results = await evaluator.evaluate_unlabeled(
-    queries=queries,
+    queries=queries,  # Will be passed as 'questions' to RAGAs
     contexts=contexts,
-    generated_answers=baseline_answers
+    generated_answers=responses  # Will be passed as 'responses' to RAGAs
 )
 
 # Compare implementations
