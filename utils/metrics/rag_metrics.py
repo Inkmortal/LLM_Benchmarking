@@ -17,6 +17,17 @@ from ragas.metrics import (
 )
 from ragas.evaluation import EvaluationDataset
 from ragas.dataset_schema import BaseSample
+from pydantic import BaseModel
+
+class RagSample(BaseModel):
+    """
+    Sample data structure for RAG evaluation.
+    Matches RAGAs expected schema.
+    """
+    query: str
+    response: str
+    contexts: List[str]
+    ground_truth: Optional[str] = None
 
 class RAGMetricsEvaluator:
     """
@@ -73,10 +84,10 @@ class RAGMetricsEvaluator:
         # Create evaluation samples
         samples = []
         for q, c, a, r in zip(queries, contexts, generated_answers, reference_answers):
-            sample = BaseSample(
-                question=q,
+            sample = RagSample(
+                query=q,
                 contexts=c,
-                answer=a,
+                response=a,
                 ground_truth=r
             )
             samples.append(sample)
@@ -117,10 +128,10 @@ class RAGMetricsEvaluator:
         # Create evaluation samples
         samples = []
         for q, c, a in zip(queries, contexts, generated_answers):
-            sample = BaseSample(
-                question=q,
+            sample = RagSample(
+                query=q,
                 contexts=c,
-                answer=a
+                response=a
             )
             samples.append(sample)
         
@@ -204,10 +215,10 @@ evaluator = RAGMetricsEvaluator(batch_size=20, sleep_time=1)
 # Create samples
 samples = []
 for q, c, a, r in zip(queries, contexts, answers, references):
-    sample = BaseSample(
-        question=q,
+    sample = RagSample(
+        query=q,
         contexts=c,
-        answer=a,
+        response=a,
         ground_truth=r
     )
     samples.append(sample)
