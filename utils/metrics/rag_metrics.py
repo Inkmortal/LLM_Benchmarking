@@ -7,7 +7,7 @@ from typing import List, Dict, Any, Optional, Union
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-import boto3
+from datasets import Dataset
 from ragas import evaluate
 from ragas.metrics import (
     Faithfulness,
@@ -17,23 +17,9 @@ from ragas.metrics import (
     ContextEntityRecall,
     NoiseSensitivity
 )
-from ragas.evaluation import EvaluationDataset
-from ragas.dataset_schema import BaseSample
 from ragas.llms import LangchainLLMWrapper
 from ragas.embeddings import LangchainEmbeddingsWrapper
 from langchain_aws import ChatBedrockConverse, BedrockEmbeddings
-from pydantic import BaseModel
-from utils.visualization.comparison_plots import BenchmarkVisualizer
-
-class RagSample(BaseModel):
-    """
-    Sample data structure for RAG evaluation.
-    Matches RAGAs expected schema.
-    """
-    query: str
-    response: str
-    contexts: List[str]
-    ground_truth: Optional[str] = None
 
 class RAGMetricsEvaluator:
     """
@@ -46,9 +32,7 @@ class RAGMetricsEvaluator:
         region_name: str = "us-west-2",
         llm_model_id: str = "anthropic.claude-3-sonnet-20240229-v1:0",
         embedding_model_id: str = "cohere.embed-english-v3",
-        temperature: float = 0.0,
-        batch_size: int = 20,
-        sleep_time: int = 1
+        temperature: float = 0.0
     ):
         """
         Initialize the evaluator with AWS Bedrock models.
@@ -58,12 +42,7 @@ class RAGMetricsEvaluator:
             llm_model_id: Bedrock LLM model ID
             embedding_model_id: Bedrock embeddings model ID
             temperature: Temperature for LLM sampling
-            batch_size: Number of API calls to batch together
-            sleep_time: Seconds to sleep between API calls
         """
-        self.batch_size = batch_size
-        self.sleep_time = sleep_time
-        
         # Initialize Bedrock models
         evaluator_llm = LangchainLLMWrapper(ChatBedrockConverse(
             region_name=region_name,
@@ -78,17 +57,17 @@ class RAGMetricsEvaluator:
         ))
         
         # Initialize metrics with wrapped models
-        self.metrics = {
-            'context_precision': ContextPrecision(llm=evaluator_llm),
-            'context_recall': ContextRecall(llm=evaluator_llm),
-            'context_entity_recall': ContextEntityRecall(llm=evaluator_llm),
-            'noise_sensitivity': NoiseSensitivity(llm=evaluator_llm),
-            'faithfulness': Faithfulness(llm=evaluator_llm),
-            'answer_relevancy': ResponseRelevancy(llm=evaluator_llm, embeddings=evaluator_embeddings)
-        }
-        
-        # Initialize visualizer
-        self.visualizer = BenchmarkVisualizer()
+        self.metrics = [
+            # Context retrieval metrics
+            ContextPrecision(llm=evaluator_llm),
+            ContextRecall(llm=evaluator_llm),
+            ContextEntityRecall(llm=evaluator_llm),
+            NoiseSensitivity(llm=evaluator_llm),
+            
+            # Answer generation metrics
+            Faithfulness(llm=evaluator_llm),
+            ResponseRelevancy(llm=evaluator_llm, embeddings=evaluator_embeddings)
+        ]
         
     async def evaluate_labeled(
         self,
@@ -111,24 +90,19 @@ class RAGMetricsEvaluator:
         Returns:
             Dictionary of metric names and scores
         """
-        # Create evaluation samples
-        samples = []
-        for q, c, a, r in zip(queries, contexts, generated_answers, reference_answers):
-            sample = RagSample(
-                query=q,
-                contexts=c,
-                response=a,
-                ground_truth=r
-            )
-            samples.append(sample)
-        
         # Create evaluation dataset
-        dataset = EvaluationDataset(samples=samples)
+        data = {
+            "question": queries,
+            "answer": generated_answers,
+            "contexts": contexts,
+            "reference": reference_answers
+        }
+        eval_dataset = Dataset.from_dict(data)
         
         # Evaluate using RAGAs
         results = await evaluate(
-            dataset,
-            metrics=list(self.metrics.values())
+            dataset=eval_dataset,
+            metrics=self.metrics
         )
         
         # Convert to DataFrame
@@ -159,30 +133,23 @@ class RAGMetricsEvaluator:
         Returns:
             Dictionary of metric names and scores
         """
-        # Create evaluation samples
-        samples = []
-        for q, c, a in zip(queries, contexts, generated_answers):
-            sample = RagSample(
-                query=q,
-                contexts=c,
-                response=a
-            )
-            samples.append(sample)
-        
         # Create evaluation dataset
-        dataset = EvaluationDataset(samples=samples)
+        data = {
+            "question": queries,
+            "answer": generated_answers,
+            "contexts": contexts
+        }
+        eval_dataset = Dataset.from_dict(data)
         
         # Select metrics that don't require ground truth
         unlabeled_metrics = [
-            self.metrics['faithfulness'],
-            self.metrics['context_precision'],
-            self.metrics['answer_relevancy'],
-            self.metrics['noise_sensitivity']
+            metric for metric in self.metrics
+            if not metric.__class__.__name__ in ['ContextRecall', 'ContextEntityRecall']
         ]
         
         # Evaluate using RAGAs
         results = await evaluate(
-            dataset,
+            dataset=eval_dataset,
             metrics=unlabeled_metrics
         )
         
@@ -318,20 +285,6 @@ def load_llama_dataset(dataset_path: str) -> tuple:
 """
 # Initialize evaluator
 evaluator = RAGMetricsEvaluator()
-
-# Create samples
-samples = []
-for q, c, a, r in zip(queries, contexts, answers, references):
-    sample = RagSample(
-        query=q,
-        contexts=c,
-        response=a,
-        ground_truth=r
-    )
-    samples.append(sample)
-
-# Create dataset
-dataset = EvaluationDataset(samples=samples)
 
 # Evaluate labeled dataset
 labeled_results = await evaluator.evaluate_labeled(
