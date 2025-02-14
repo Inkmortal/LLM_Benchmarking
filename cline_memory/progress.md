@@ -42,6 +42,25 @@
 
 ## In Progress 🔄
 
+### OpenSearch Query Debugging
+1. Test Script Created:
+   - test_opensearch_query.ipynb
+   - Multiple query approaches
+   - Detailed error analysis
+   - Using existing domain
+
+2. Query Variations:
+   - Original script query
+   - Alternative script syntax
+   - k-NN query fallback
+   - Error reporting
+
+3. Test Environment:
+   - Using baseline-rag-benchmark-store
+   - Preserving existing index
+   - Debug-focused setup
+   - No cleanup during testing
+
 ### Testing
 1. Unit Tests:
    - document_utils.py
@@ -67,6 +86,19 @@
    - Caching strategies
 
 ## Pending Tasks 📋
+
+### OpenSearch Query Fix
+1. Run Test Notebook:
+   - Execute query variations
+   - Analyze error details
+   - Document findings
+   - Implement solution
+
+2. Update Implementation:
+   - Apply working solution
+   - Add error handling
+   - Test changes
+   - Update documentation
 
 ### Testing
 1. Automated Tests:
@@ -96,18 +128,25 @@
 
 ## Known Issues 🐛
 
-### Document Processing
-1. Performance:
-   - Large batch memory usage
-   - Chunking optimization needed
-   - File type support limited
-   - Error recovery improvements
+### OpenSearch Query
+1. Script Compilation:
+   - Error in semantic search
+   - Testing alternative approaches
+   - Detailed error analysis
+   - Solution in progress
 
 2. Resource Management:
    - OpenSearch startup time
    - Cost optimization needed
    - Cleanup verification
    - Error handling gaps
+
+### Document Processing
+1. Performance:
+   - Large batch memory usage
+   - Chunking optimization needed
+   - File type support limited
+   - Error recovery improvements
 
 ### Testing
 1. Coverage:
@@ -116,20 +155,14 @@
    - Performance tests missing
    - Edge cases untested
 
-2. Documentation:
-   - Usage examples needed
-   - Error guides incomplete
-   - Performance tips missing
-   - Best practices needed
-
 ## Next Steps 🎯
 
 ### Short Term
-1. Testing:
-   - Complete unit tests
-   - Add integration tests
-   - Document test cases
-   - Setup CI/CD
+1. OpenSearch Fix:
+   - Run test notebook
+   - Analyze errors
+   - Implement solution
+   - Update implementation
 
 2. Documentation:
    - Finish usage guides
@@ -164,14 +197,14 @@
 - Usage documentation
 - API reference
 
-### Phase 3: Optimization 📋
+### Phase 3: OpenSearch Query Fix 🔄
+- Test script development
+- Error analysis
+- Solution implementation
+- Documentation update
+
+### Phase 4: Optimization 📋
 - Performance improvements
 - Resource optimization
 - Cost management
 - Caching implementation
-
-### Phase 4: Advanced Features 📋
-- Additional file types
-- Enhanced chunking
-- Better error handling
-- Automated testing

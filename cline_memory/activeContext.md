@@ -1,11 +1,30 @@
 # Active Context
 
 ## Current Focus
-- Baseline RAG benchmarking implementation
-- OpenSearch resource management
+- Debugging OpenSearch script compilation error
+- Testing alternative query approaches
 - Development utilities enhancement
 
 ## Recent Changes
+
+### OpenSearch Query Testing
+1. Created test_opensearch_query.ipynb:
+   - Tests different query approaches
+   - Detailed error analysis
+   - Uses existing domain and index
+   - No cleanup to preserve data
+
+2. Query Variations:
+   - Original script query
+   - Alternative script with explicit language
+   - Raw k-NN query as fallback
+   - Detailed error reporting
+
+3. Test Environment:
+   - Using existing domain: baseline-rag-benchmark-store
+   - Using existing index: originofcovid19dataset-benchmark
+   - Preserving indexed documents
+   - Debug-focused setup
 
 ### Document Processing Pipeline
 1. Code Organization:
@@ -69,6 +88,23 @@
 
 ## Active Decisions
 
+### OpenSearch Query Testing
+1. Test Strategy:
+   - Use existing domain and index
+   - Test multiple query approaches
+   - Detailed error analysis
+   - No cleanup during testing
+
+2. Query Variations:
+   - Original script query to reproduce error
+   - Alternative script with explicit settings
+   - k-NN query as potential fallback
+
+3. Error Analysis:
+   - Capture detailed error info
+   - Test different script syntaxes
+   - Document working solution
+
 ### Document Processing
 1. Use Langchain for robust file handling:
    - PDF, TXT, DOCX support
@@ -99,6 +135,12 @@
 
 ## Next Steps
 
+### OpenSearch Query
+1. Run test notebook
+2. Analyze error details
+3. Implement working solution
+4. Update implementation
+
 ### Implementation
 1. Complete baseline benchmarking
 2. Add more test cases
@@ -120,12 +162,18 @@
 ## Known Issues
 
 ### OpenSearch
-1. Domain creation time:
+1. Script compilation error:
+   - Affects semantic search
+   - Testing solutions
+   - Multiple query approaches
+   - Detailed error analysis
+
+2. Domain creation time:
    - 10-15 minutes typical
    - Progress monitoring added
    - Status tracking improved
 
-2. Resource management:
+3. Resource management:
    - Cleanup importance
    - Cost considerations
    - Access control

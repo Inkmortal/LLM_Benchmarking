@@ -69,6 +69,23 @@
    - Check metadata preservation
    - Validate chunking
 
+### OpenSearch Patterns
+1. Script Query Syntax:
+   - Always specify script language: `"lang": "painless"`
+   - Access vector fields with doc[]: `doc['embedding']`
+   - Use intermediate variables for clarity
+   - Example:
+     ```python
+     "source": "double score = cosineSimilarity(params.query_vector, doc['embedding']); return score + 1.0;"
+     ```
+   - Reason: OpenSearch requires explicit field access for KNN vectors
+
+2. Error Handling:
+   - Capture detailed error info
+   - Test query variations
+   - Document working patterns
+   - Maintain test scripts
+
 ### Common Issues
 1. Document Processing:
    - Large files need batching
