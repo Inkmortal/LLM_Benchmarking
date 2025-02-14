@@ -2,6 +2,29 @@
 
 ## Architecture Patterns
 
+### Document Processing Pattern
+- Core Components:
+  1. BaselineRAG (implementation.ipynb)
+     - Core RAG functionality
+     - Vector embeddings
+     - OpenSearch operations
+     - Query processing
+  2. Document Ingestion (ingestion.ipynb)
+     - Langchain document loaders
+     - Smart text chunking
+     - Metadata handling
+     - Batch processing
+  3. Document Utils (document_utils.py)
+     - Basic text processing
+     - Dataset utilities
+     - File handling
+- Workflow:
+  1. BaselineRAG receives documents
+  2. Passes to ingestion with config
+  3. Ingestion processes and chunks
+  4. Returns processed documents
+  5. BaselineRAG stores in OpenSearch
+
 ### RAG Implementation Pattern
 - Core Components:
   1. Document Processor
@@ -140,3 +163,10 @@
 4. Usage patterns
 5. Cleanup procedures
 6. Debug options
+
+### Code Organization
+1. Keep files under 200 lines
+2. Clear separation of concerns
+3. Modular components
+4. Consistent patterns
+5. Reusable utilities

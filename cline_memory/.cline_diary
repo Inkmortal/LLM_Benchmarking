@@ -1,0 +1,112 @@
+# Cline's Learning Journal
+
+## Document Processing Implementation
+
+### Architecture Decisions
+1. Split implementation and ingestion:
+   - Reason: Keep files under 200 lines
+   - Benefit: Clear separation of concerns
+   - Learning: Easier to maintain and test
+   - Pattern: Delegate document processing to ingestion.ipynb
+
+2. Use Langchain for document handling:
+   - Reason: More robust file support
+   - Benefit: Better chunking strategies
+   - Learning: RecursiveCharacterTextSplitter works best
+   - Pattern: Map file extensions to specific loaders
+
+3. Preserve chunking config in BaselineRAG:
+   - Reason: Keep configuration centralized
+   - Benefit: Consistent chunking across system
+   - Learning: Pass config to ingestion
+   - Pattern: Config flows down, data flows up
+
+### Implementation Patterns
+1. Document Processing Flow:
+   ```
+   BaselineRAG
+   -> ingestion.ipynb (with config)
+   -> Langchain loaders
+   -> Text splitting
+   -> Metadata handling
+   -> Vector storage
+   ```
+
+2. File Organization:
+   ```
+   implementation.ipynb (core RAG)
+   ingestion.ipynb (document processing)
+   document_utils.py (utilities)
+   ```
+
+3. Memory Bank Structure:
+   ```
+   codebase.md (implementation details)
+   systemPatterns.md (architecture)
+   techContext.md (dependencies)
+   ```
+
+### Learned Best Practices
+1. Document Processing:
+   - Always preserve metadata through pipeline
+   - Use appropriate loader for each file type
+   - Process documents in batches
+   - Handle errors gracefully
+
+2. Code Organization:
+   - Keep files under 200 lines
+   - Document dependencies clearly
+   - Use consistent patterns
+   - Maintain memory bank
+
+3. Testing Strategy:
+   - Test in separate environment from development
+   - Create portable test scripts for cross-env testing
+   - Verify functionality in both environments
+   - Document environment-specific issues
+   - Use git for code synchronization between environments
+   - Validate document processing
+   - Check metadata preservation
+   - Validate chunking
+
+### Common Issues
+1. Document Processing:
+   - Large files need batching
+   - Metadata must be preserved
+   - Chunking needs configuration
+   - File types need proper loaders
+
+2. Implementation:
+   - Keep dependencies clear
+   - Handle errors properly
+   - Maintain documentation
+   - Test thoroughly
+
+### Environment Management
+1. Development vs. Testing:
+   - Development done in primary environment
+   - Testing performed in separate environment
+   - Use git for code synchronization
+   - Create portable test scripts
+   - Document environment differences
+   - Handle environment-specific configurations
+
+2. Testing Workflow:
+   - Create test scripts in tests directory
+   - Push changes to repository
+   - Pull and run tests in test environment
+   - Document test results
+   - Update fixes based on test findings
+
+### Future Improvements
+1. Document Processing:
+   - Add more file types
+   - Improve chunking
+   - Enhance metadata
+   - Add caching
+
+2. Testing:
+   - Add unit tests
+   - Add integration tests
+   - Measure performance
+   - Document patterns

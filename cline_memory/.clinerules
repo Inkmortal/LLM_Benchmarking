@@ -4,6 +4,8 @@
 
 ### 1. Notebook Structure
 - Implementation notebooks split into ingestion and core logic
+  - implementation.ipynb: Core RAG functionality
+  - ingestion.ipynb: Document processing with Langchain
 - Evaluation notebooks follow template structure
 - Utility functions extracted to Python modules
 - Documentation in markdown cells
@@ -23,19 +25,29 @@
 
 ## Development Patterns
 
-### 1. AWS Integration
+### 1. Document Processing
+- Use Langchain for robust file handling
+  - PyPDFLoader for PDFs
+  - TextLoader for text files
+  - Docx2txtLoader for Word docs
+  - UnstructuredFileLoader as fallback
+- Smart text chunking with RecursiveCharacterTextSplitter
+- Preserve metadata through processing pipeline
+- Process documents in batches for efficiency
+
+### 2. AWS Integration
 - Always use environment variables for credentials
 - Implement rate limiting for API calls
 - Handle service-specific errors
 - Cache results where possible
 
-### 2. Dataset Handling
+### 3. Dataset Handling
 - Download datasets through llama-index
 - Cache locally to avoid re-downloads
 - Track source files separately
 - Preserve metadata during processing
 
-### 3. Evaluation Process
+### 4. Evaluation Process
 - Use standardized templates
 - Run benchmarks in batches
 - Generate visual reports
@@ -43,19 +55,25 @@
 
 ## Common Pitfalls
 
-### 1. AWS Services
+### 1. Document Processing
+- Large documents need proper chunking
+- Metadata must be preserved through pipeline
+- File encodings can cause issues
+- Memory usage with large batches
+
+### 2. AWS Services
 - Rate limits can affect batch processing
 - OpenSearch needs proper index settings
 - Bedrock requires specific model IDs
 - Neptune setup requires manual steps
 
-### 2. Performance
+### 3. Performance
 - Large batches can trigger rate limits
 - Caching improves repeated operations
 - Memory usage grows with dataset size
 - Async operations need proper handling
 
-### 3. Documentation
+### 4. Documentation
 - Keep notebooks self-contained
 - Update docs with code changes
 - Include usage examples
@@ -83,19 +101,27 @@
 
 ## Learned Patterns
 
-### 1. Effective Practices
+### 1. Document Processing
+- Split large documents into chunks
+- Use smart text splitting
+- Preserve document context
+- Handle file types appropriately
+- Process in batches for efficiency
+- Cache processed documents
+
+### 2. Effective Practices
 - Split complex notebooks into stages
 - Cache intermediate results
 - Use progress bars for long operations
 - Implement proper error handling
 
-### 2. Optimization Tips
+### 3. Optimization Tips
 - Batch similar operations
 - Cache embeddings
 - Use async for API calls
 - Monitor resource usage
 
-### 3. Testing Strategies
+### 4. Testing Strategies
 - Start with small datasets
 - Validate results incrementally
 - Monitor performance metrics
@@ -104,10 +130,10 @@
 ## Project-Specific Notes
 
 ### 1. RAG Implementation
-- Prefer batch operations
-- Cache embeddings locally
-- Handle rate limits gracefully
-- Log important operations
+- Keep implementation and ingestion separate
+- Pass chunking config from implementation to ingestion
+- Use _store_documents for direct vector storage
+- Keep files under 200 lines
 
 ### 2. Evaluation
 - Use RAGAs metrics consistently

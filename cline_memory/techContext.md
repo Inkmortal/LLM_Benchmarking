@@ -18,11 +18,33 @@
    - Identity-based access control
    - Configurable verbosity for setup and management
 
+### Document Processing
+1. Langchain
+   - Document loaders for multiple formats
+     - PyPDFLoader for PDFs
+     - TextLoader for text files
+     - Docx2txtLoader for Word docs
+     - UnstructuredFileLoader as fallback
+   - RecursiveCharacterTextSplitter for chunking
+     - Configurable chunk size and overlap
+     - Smart separator handling
+     - Context preservation
+
+2. Configuration
+   - Default chunk size: 500 words (≈2000 chars)
+   - Default overlap: 50 words
+   - Chunking enabled by default
+   - Batch processing: 100 docs per batch
+
 ### Python Libraries
 1. boto3 for AWS interactions
 2. opensearchpy for vector operations
 3. requests_aws4auth for authentication
 4. tqdm for progress tracking
+5. langchain-community for document processing
+6. pypdf for PDF handling
+7. python-magic for file type detection
+8. docx2txt for Word document processing
 
 ## Development Tools
 
