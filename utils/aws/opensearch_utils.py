@@ -4,7 +4,7 @@ import json
 import time
 import datetime
 import boto3
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
 
 class OpenSearchManager:
     """Manages OpenSearch domain operations including setup, status checking, and cleanup."""
@@ -27,6 +27,12 @@ class OpenSearchManager:
         sts = boto3.client('sts')
         self.identity = sts.get_caller_identity()
         self.current_arn = self.identity['Arn']
+        
+    def _serialize_datetime(self, obj: Any) -> Any:
+        """Helper to serialize datetime objects in JSON dumps."""
+        if isinstance(obj, (datetime.datetime, datetime.date)):
+            return obj.isoformat()
+        return obj
         
     def get_domain_status(self) -> Dict:
         """Get detailed OpenSearch domain status with progress information."""
@@ -127,7 +133,7 @@ class OpenSearchManager:
             attempt += 1
             
         print("\nFinal domain status:")
-        print(json.dumps(status['full_status'], indent=2))
+        print(json.dumps(status['full_status'], indent=2, default=self._serialize_datetime))
         raise TimeoutError(f"OpenSearch domain did not become active after {max_attempts * delay / 60:.1f} minutes")
         
     def setup_domain(self) -> str:
@@ -149,7 +155,7 @@ class OpenSearchManager:
             print(f"\nFound existing domain: {self.domain_name}")
             print(f"Status: {status['stage']}")
             print("Full domain status:")
-            print(json.dumps(status['full_status'], indent=2))
+            print(json.dumps(status['full_status'], indent=2, default=self._serialize_datetime))
             
             if status['endpoint']:
                 print(f"\nDomain is active with endpoint: {status['endpoint']}")
@@ -162,7 +168,7 @@ class OpenSearchManager:
             try:
                 response = self.create_domain()
                 print("\nDomain creation response:")
-                print(json.dumps(response, indent=2))
+                print(json.dumps(response, indent=2, default=self._serialize_datetime))
                 
                 print("\nWaiting for OpenSearch domain to be active (this may take 10-15 minutes)...")
                 return self.wait_for_domain()
