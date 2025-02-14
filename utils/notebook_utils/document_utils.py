@@ -7,12 +7,12 @@ from tqdm import tqdm
 class DocumentPreprocessor:
     """Handles document preprocessing for RAG ingestion"""
     
-    def __init__(self, chunk_size: int = 1000, chunk_overlap: int = 200):
+    def __init__(self, chunk_size: int = 500, chunk_overlap: int = 50):
         """Initialize preprocessor
         
         Args:
-            chunk_size: Maximum number of characters per chunk
-            chunk_overlap: Number of characters to overlap between chunks
+            chunk_size: Maximum number of words per chunk (default 500 words ≈ 2000 chars)
+            chunk_overlap: Number of words to overlap between chunks
         """
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
@@ -33,7 +33,7 @@ class DocumentPreprocessor:
         return text
     
     def chunk_text(self, text: str) -> List[str]:
-        """Split text into overlapping chunks
+        """Split text into overlapping chunks by words
         
         Args:
             text: Text to chunk
@@ -41,28 +41,25 @@ class DocumentPreprocessor:
         Returns:
             List of text chunks
         """
+        # Split into words
+        words = text.split()
         chunks = []
         start = 0
         
-        while start < len(text):
+        while start < len(words):
             # Find the end of the chunk
-            end = start + self.chunk_size
+            end = min(start + self.chunk_size, len(words))
             
-            # If we're not at the end of the text, try to break at a sentence
-            if end < len(text):
-                # Look for sentence boundaries (.!?) within the last 100 chars of the chunk
-                search_region = text[end-100:end]
-                last_period = max(
-                    search_region.rfind('. '),
-                    search_region.rfind('! '),
-                    search_region.rfind('? ')
-                )
-                
-                if last_period != -1:
-                    end = end - (100 - last_period - 2)  # -2 for the punctuation and space
+            # If we're not at the end, try to break at a sentence
+            if end < len(words):
+                # Look back up to 20 words for a sentence boundary
+                for i in range(end-1, max(end-20, start), -1):
+                    if words[i].endswith(('.', '!', '?')):
+                        end = i + 1
+                        break
             
             # Extract the chunk
-            chunk = text[start:end].strip()
+            chunk = ' '.join(words[start:end]).strip()
             if chunk:  # Only add non-empty chunks
                 chunks.append(chunk)
             
@@ -159,8 +156,14 @@ def ingest_documents(source_path: str, rag_system: Any, metadata: Optional[Dict]
         metadata: Optional metadata to preserve
         batch_size: Number of documents to process in each batch
     """
-    # Initialize preprocessor
-    preprocessor = DocumentPreprocessor()
+    # Initialize preprocessor with system's chunking config if available
+    if hasattr(rag_system, 'chunk_size') and hasattr(rag_system, 'chunk_overlap'):
+        preprocessor = DocumentPreprocessor(
+            chunk_size=rag_system.chunk_size,
+            chunk_overlap=rag_system.chunk_overlap
+        )
+    else:
+        preprocessor = DocumentPreprocessor()
     
     # Process and ingest documents
     if os.path.isfile(source_path):
