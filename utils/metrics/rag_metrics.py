@@ -6,7 +6,7 @@ Provides a unified interface for evaluating RAG systems with both labeled and un
 from typing import List, Dict, Any, Optional
 import pandas as pd
 import boto3
-from ragas import evaluate
+from ragas import evaluate, Dataset
 from ragas.metrics import (
     Faithfulness,
     ContextPrecision,
@@ -68,20 +68,24 @@ class RAGMetricsEvaluator:
         Returns:
             Dictionary of metric names and scores
         """
+        # Create dataset in RAGAs format
+        dataset = Dataset.from_dict({
+            'question': queries,
+            'contexts': contexts,
+            'answer': generated_answers,
+            'ground_truth': reference_answers
+        })
+        
+        # Evaluate using RAGAs
         results = await evaluate(
-            question=queries,  # RAGAs expects singular 'question'
-            contexts=contexts,
-            answer=generated_answers,  # RAGAs expects 'answer'
-            ground_truths=reference_answers,
+            dataset,
             metrics=[
                 self.faithfulness,
                 self.context_precision,
                 self.response_relevancy,
                 self.context_recall,
                 self.context_entities_recall
-            ],
-            batch_size=self.batch_size,
-            sleep_time_in_seconds=self.sleep_time
+            ]
         )
         return results
     
@@ -102,18 +106,22 @@ class RAGMetricsEvaluator:
         Returns:
             Dictionary of metric names and scores
         """
+        # Create dataset in RAGAs format
+        dataset = Dataset.from_dict({
+            'question': queries,
+            'contexts': contexts,
+            'answer': generated_answers
+        })
+        
+        # Evaluate using RAGAs
         results = await evaluate(
-            question=queries,  # RAGAs expects singular 'question'
-            contexts=contexts,
-            answer=generated_answers,  # RAGAs expects 'answer'
+            dataset,
             metrics=[
                 self.faithfulness,
                 self.context_precision,
                 self.response_relevancy,
                 self.noise_sensitivity
-            ],
-            batch_size=self.batch_size,
-            sleep_time_in_seconds=self.sleep_time
+            ]
         )
         return results
     
@@ -179,19 +187,27 @@ def load_llama_dataset(dataset_path: str) -> tuple:
 # Initialize evaluator
 evaluator = RAGMetricsEvaluator(batch_size=20, sleep_time=1)
 
+# Create dataset
+dataset = Dataset.from_dict({
+    'question': queries,
+    'contexts': contexts,
+    'answer': generated_answers,
+    'ground_truth': reference_answers
+})
+
 # Evaluate labeled dataset
 labeled_results = await evaluator.evaluate_labeled(
-    queries=queries,  # Will be passed as 'question' to RAGAs
+    queries=queries,
     contexts=contexts,
-    generated_answers=answers,  # Will be passed as 'answer' to RAGAs
+    generated_answers=answers,
     reference_answers=ground_truths
 )
 
 # Evaluate unlabeled dataset
 unlabeled_results = await evaluator.evaluate_unlabeled(
-    queries=queries,  # Will be passed as 'question' to RAGAs
+    queries=queries,
     contexts=contexts,
-    generated_answers=answers  # Will be passed as 'answer' to RAGAs
+    generated_answers=answers
 )
 
 # Compare implementations
