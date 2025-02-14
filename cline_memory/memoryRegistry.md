@@ -1,22 +1,52 @@
 # Memory Registry
 
-## Core Memory Banks
+## Core Files
 
-| File | Purpose | Last Updated |
-|------|---------|--------------|
-| projectbrief.md | Project goals, milestones, and high-level requirements | 2024-02-13 |
-| activeContext.md | Current work focus, implementation status, and recent decisions | 2024-02-13 |
-| techContext.md | Technology stack, infrastructure, and development environment | 2024-02-13 |
-| systemPatterns.md | Architecture patterns, code organization, and key components | 2024-02-13 |
-| codebase.md | File relationships, dependencies, and implementation details | 2024-02-13 |
+### activeContext.md
+- Last Updated: 2024-02-13 21:56
+- Changes:
+  - Added RAG evaluation pipeline section
+  - Updated OpenSearch query testing status
+  - Added progress tracking details
+  - Updated next steps
 
-## Project Rules and Conventions
+### progress.md
+- Last Updated: 2024-02-13 21:57
+- Changes:
+  - Added RAG evaluation pipeline status
+  - Updated in-progress features
+  - Added progress visualization details
+  - Updated timeline
 
-| File | Purpose | Last Updated |
-|------|---------|--------------|
-| .clinerules | Project-specific conventions, patterns, and learned practices | 2024-02-13 |
+### projectbrief.md
+- Last Updated: Initial setup
+- Core project requirements and goals
+- Foundation for all development work
 
-## File Dependencies
+### productContext.md
+- Last Updated: Initial setup
+- Problem space and solution approach
+- User experience goals
+
+### systemPatterns.md
+- Last Updated: Initial setup
+- System architecture decisions
+- Component relationships
+- Design patterns
+
+### techContext.md
+- Last Updated: Initial setup
+- Technology stack details
+- Development environment
+- Dependencies
+
+### codebase.md
+- Last Updated: Initial setup
+- Code organization
+- File structure
+- Implementation patterns
+
+## Dependencies
 
 ```mermaid
 flowchart TD
@@ -27,21 +57,43 @@ flowchart TD
     PC --> AC[activeContext.md]
     SP --> AC
     TC --> AC
-    SP --> CB[codebase.md]
-    TC --> CB
-    CB --> AC
+    AC --> P[progress.md]
 ```
 
-## Notes
-- All dates reflect initial creation or last substantial update
-- Memory banks are organized by primary function
-- Content is migrated from previous Cline Docs system
-- Each file maintains focused, specific purpose
+## Recent Updates
 
-## File Relationships
-- projectbrief.md defines overall goals
-- systemPatterns.md informs codebase.md structure
-- techContext.md provides implementation context
-- codebase.md tracks detailed implementation
-- activeContext.md reflects current state
-- .clinerules enforces conventions
+### RAG Evaluation Pipeline
+- Fixed RAGAs integration
+- Added progress tracking
+- Updated benchmark notebook
+- Added error handling
+
+### OpenSearch Query Testing
+- Created test notebook
+- Added query variations
+- Implemented error analysis
+- Added progress tracking
+
+### Document Processing
+- Langchain integration
+- Chunking configuration
+- Metadata handling
+- Batch processing
+
+## Task-Relevant Files
+
+### Current Task: RAG Evaluation Debug
+1. Primary:
+   - evaluation_pipelines/rag_evaluations/baseline_rag_benchmark.ipynb
+   - utils/metrics/rag_metrics.py
+   - development/notebooks/test_opensearch_query.ipynb
+
+2. Supporting:
+   - rag_implementations/baseline_rag/implementation.ipynb
+   - rag_implementations/baseline_rag/ingestion.ipynb
+   - utils/aws/opensearch_utils.py
+
+3. Documentation:
+   - activeContext.md
+   - progress.md
+   - codebase.md

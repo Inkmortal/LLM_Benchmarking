@@ -23,6 +23,7 @@ class OpenSearchManager:
         self.client = boto3.client('opensearch')
         self.region = boto3.Session().region_name
         self._setup_identity()
+        self.start_time = datetime.datetime.now()
         
     def _setup_identity(self):
         """Get current AWS identity."""
@@ -42,8 +43,11 @@ class OpenSearchManager:
             response = self.client.describe_domain(DomainName=self.domain_name)
             status = response['DomainStatus']
             
-            # Get creation progress
+            # Calculate elapsed time
             elapsed = 0
+            now = datetime.datetime.now()
+            
+            # Try to get elapsed time from change progress
             if 'ChangeProgressDetails' in status:
                 progress = status['ChangeProgressDetails']
                 # Handle both datetime and timestamp formats
@@ -54,6 +58,21 @@ class OpenSearchManager:
                     start_time = datetime.datetime.fromtimestamp(progress['StartTime'])
                     last_update = datetime.datetime.fromtimestamp(progress['LastUpdatedTime'])
                 elapsed = (last_update - start_time).total_seconds() / 60.0  # minutes
+            
+            # If no change progress or elapsed is 0, calculate from creation time
+            if elapsed == 0:
+                if 'Created' in status and status['Created']:
+                    if 'CreatedDate' in status:
+                        created_date = status['CreatedDate']
+                        if not isinstance(created_date, datetime.datetime):
+                            created_date = datetime.datetime.fromtimestamp(created_date)
+                        elapsed = (now - created_date).total_seconds() / 60.0
+                    else:
+                        # Fallback to our instance start time
+                        elapsed = (now - self.start_time).total_seconds() / 60.0
+                else:
+                    # Domain is still being created, use our instance start time
+                    elapsed = (now - self.start_time).total_seconds() / 60.0
                 
             return {
                 'exists': True,
@@ -65,13 +84,15 @@ class OpenSearchManager:
                 'full_status': status  # Include full status for debugging
             }
         except self.client.exceptions.ResourceNotFoundException:
+            # Calculate elapsed time from instance creation
+            elapsed = (datetime.datetime.now() - self.start_time).total_seconds() / 60.0
             return {
                 'exists': False,
                 'processing': False,
                 'stage': 'NotFound',
                 'created': False,
                 'endpoint': None,
-                'elapsed_minutes': 0,
+                'elapsed_minutes': elapsed,
                 'full_status': None
             }
             

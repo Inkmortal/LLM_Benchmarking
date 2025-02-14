@@ -42,6 +42,25 @@
 
 ## In Progress 🔄
 
+### RAG Evaluation Pipeline
+1. RAGAs Integration:
+   - Fixed parameter names
+   - Updated API calls
+   - Added error handling
+   - Progress tracking
+
+2. Progress Visualization:
+   - tqdm progress bars
+   - Status updates
+   - Error reporting
+   - Completion tracking
+
+3. Results Management:
+   - Configuration saving
+   - Metrics storage
+   - Progress tracking
+   - Comparison tools
+
 ### OpenSearch Query Debugging
 1. Test Script Created:
    - test_opensearch_query.ipynb
@@ -86,6 +105,19 @@
    - Caching strategies
 
 ## Pending Tasks 📋
+
+### RAG Evaluation
+1. Run Updated Benchmark:
+   - Test fixed RAGAs integration
+   - Verify progress tracking
+   - Analyze metrics
+   - Document results
+
+2. Benchmark Analysis:
+   - Compare approaches
+   - Analyze performance
+   - Document findings
+   - Make recommendations
 
 ### OpenSearch Query Fix
 1. Run Test Notebook:
@@ -158,11 +190,11 @@
 ## Next Steps 🎯
 
 ### Short Term
-1. OpenSearch Fix:
-   - Run test notebook
-   - Analyze errors
-   - Implement solution
-   - Update implementation
+1. RAG Evaluation:
+   - Run updated benchmark
+   - Test progress tracking
+   - Analyze results
+   - Document findings
 
 2. Documentation:
    - Finish usage guides
@@ -197,10 +229,10 @@
 - Usage documentation
 - API reference
 
-### Phase 3: OpenSearch Query Fix 🔄
-- Test script development
-- Error analysis
-- Solution implementation
+### Phase 3: RAG Evaluation 🔄
+- RAGAs integration fix
+- Progress tracking
+- Results analysis
 - Documentation update
 
 ### Phase 4: Optimization 📋

@@ -4,27 +4,48 @@
 - Debugging OpenSearch script compilation error
 - Testing alternative query approaches
 - Development utilities enhancement
+- RAG evaluation improvements
 
 ## Recent Changes
 
+### RAG Evaluation Pipeline
+1. Fixed RAGAs Integration:
+   - Updated parameter names to match RAGAs API
+   - queries -> questions
+   - generated_answers -> responses
+   - Added detailed error handling
+   - Added progress tracking
+
+2. Progress Tracking:
+   - Added tqdm progress bars
+   - Real-time status updates
+   - Query-by-query progress
+   - Error reporting in progress bar
+
+3. Benchmark Notebook:
+   - Configurable parameters
+   - Detailed documentation
+   - Progress visualization
+   - Results saving
+
 ### OpenSearch Query Testing
-1. Created test_opensearch_query.ipynb:
-   - Tests different query approaches
+1. Test Script Created:
+   - test_opensearch_query.ipynb
+   - Multiple query approaches
    - Detailed error analysis
-   - Uses existing domain and index
-   - No cleanup to preserve data
+   - Using existing domain
 
 2. Query Variations:
    - Original script query
-   - Alternative script with explicit language
-   - Raw k-NN query as fallback
-   - Detailed error reporting
+   - Alternative script syntax
+   - k-NN query fallback
+   - Error reporting
 
 3. Test Environment:
-   - Using existing domain: baseline-rag-benchmark-store
-   - Using existing index: originofcovid19dataset-benchmark
-   - Preserving indexed documents
+   - Using baseline-rag-benchmark-store
+   - Preserving existing index
    - Debug-focused setup
+   - No cleanup during testing
 
 ### Document Processing Pipeline
 1. Code Organization:
@@ -88,6 +109,25 @@
 
 ## Active Decisions
 
+### RAG Evaluation
+1. Progress Tracking:
+   - Use tqdm for visual progress
+   - Show query-by-query status
+   - Display error details
+   - Track completion percentage
+
+2. Error Handling:
+   - Detailed error messages
+   - Status in progress bar
+   - Exception type display
+   - Error recovery options
+
+3. Results Management:
+   - Save configuration
+   - Store metrics
+   - Track progress
+   - Enable comparison
+
 ### OpenSearch Query Testing
 1. Test Strategy:
    - Use existing domain and index
@@ -134,6 +174,12 @@
    - Easy debugging
 
 ## Next Steps
+
+### RAG Evaluation
+1. Run updated benchmark
+2. Analyze metrics
+3. Compare approaches
+4. Document findings
 
 ### OpenSearch Query
 1. Run test notebook
