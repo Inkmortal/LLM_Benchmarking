@@ -69,7 +69,7 @@ class RAGMetricsEvaluator:
             ResponseRelevancy(llm=evaluator_llm, embeddings=evaluator_embeddings)
         ]
         
-    async def evaluate_labeled(
+    def evaluate_labeled(
         self,
         queries: List[str],
         contexts: List[List[str]],
@@ -100,7 +100,7 @@ class RAGMetricsEvaluator:
         eval_dataset = Dataset.from_dict(data)
         
         # Evaluate using RAGAs
-        results = await evaluate(
+        results = evaluate(
             dataset=eval_dataset,
             metrics=self.metrics
         )
@@ -114,7 +114,7 @@ class RAGMetricsEvaluator:
         
         return results
     
-    async def evaluate_unlabeled(
+    def evaluate_unlabeled(
         self,
         queries: List[str],
         contexts: List[List[str]],
@@ -148,7 +148,7 @@ class RAGMetricsEvaluator:
         ]
         
         # Evaluate using RAGAs
-        results = await evaluate(
+        results = evaluate(
             dataset=eval_dataset,
             metrics=unlabeled_metrics
         )
@@ -287,7 +287,7 @@ def load_llama_dataset(dataset_path: str) -> tuple:
 evaluator = RAGMetricsEvaluator()
 
 # Evaluate labeled dataset
-labeled_results = await evaluator.evaluate_labeled(
+labeled_results = evaluator.evaluate_labeled(
     queries=queries,
     contexts=contexts,
     generated_answers=answers,
@@ -295,7 +295,7 @@ labeled_results = await evaluator.evaluate_labeled(
 )
 
 # Evaluate unlabeled dataset
-unlabeled_results = await evaluator.evaluate_unlabeled(
+unlabeled_results = evaluator.evaluate_unlabeled(
     queries=queries,
     contexts=contexts,
     generated_answers=answers
