@@ -15,7 +15,8 @@ from ragas.metrics import (
     ContextEntityRecall,
     NoiseSensitivity
 )
-from ragas.evaluation import EvaluationDataset, Sample
+from ragas.evaluation import EvaluationDataset
+from ragas.dataset_schema import BaseSample
 
 class RAGMetricsEvaluator:
     """
@@ -72,7 +73,7 @@ class RAGMetricsEvaluator:
         # Create evaluation samples
         samples = []
         for q, c, a, r in zip(queries, contexts, generated_answers, reference_answers):
-            sample = Sample(
+            sample = BaseSample(
                 question=q,
                 contexts=c,
                 answer=a,
@@ -116,7 +117,7 @@ class RAGMetricsEvaluator:
         # Create evaluation samples
         samples = []
         for q, c, a in zip(queries, contexts, generated_answers):
-            sample = Sample(
+            sample = BaseSample(
                 question=q,
                 contexts=c,
                 answer=a
@@ -203,7 +204,7 @@ evaluator = RAGMetricsEvaluator(batch_size=20, sleep_time=1)
 # Create samples
 samples = []
 for q, c, a, r in zip(queries, contexts, answers, references):
-    sample = Sample(
+    sample = BaseSample(
         question=q,
         contexts=c,
         answer=a,
