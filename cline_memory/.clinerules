@@ -7,6 +7,7 @@
 - Evaluation notebooks follow template structure
 - Utility functions extracted to Python modules
 - Documentation in markdown cells
+- ALWAYS use write_to_file for notebook edits, never replace_in_file (it fails with notebook formatting)
 
 ### 2. Directory Conventions
 - Datasets stored in `datasets/rag_evaluation/`
