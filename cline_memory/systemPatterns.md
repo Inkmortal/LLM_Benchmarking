@@ -20,11 +20,8 @@
   3. Cost warning notifications
   4. Duplicate document prevention
   5. Endpoint auto-detection
-- Cleanup Strategy:
-  1. Default to cleanup enabled
-  2. Optional preservation
-  3. Clear cleanup instructions
-  4. Cost awareness
+  6. Configurable verbosity
+  7. Identity-based access
 
 ### Data Management Pattern
 - Document Processing:
@@ -59,6 +56,7 @@
   1. Graceful fallbacks
   2. Clear error messages
   3. Recovery procedures
+  4. Verbose debugging option
 - Data Errors:
   1. Validation checks
   2. Format verification
@@ -93,6 +91,7 @@
   1. Function descriptions
   2. Parameter details
   3. Usage examples
+  4. Verbosity options
 - System Documentation:
   1. Architecture overview
   2. Setup instructions
@@ -117,12 +116,15 @@
 3. Implement duplicate detection
 4. Monitor resource usage
 5. Document cleanup procedures
+6. Configure appropriate verbosity
+7. Use identity-based access
 
 ### Error Handling
 1. Graceful degradation
 2. Clear error messages
 3. Recovery procedures
 4. User guidance
+5. Optional verbose output
 
 ### Cost Optimization
 1. Resource sharing when possible
@@ -137,3 +139,4 @@
 3. Resource management
 4. Usage patterns
 5. Cleanup procedures
+6. Debug options

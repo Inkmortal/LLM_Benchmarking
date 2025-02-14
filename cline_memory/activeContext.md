@@ -1,99 +1,132 @@
-# Active Development Context
+# Active Context
 
-## Current Implementation Focus
-Testing and benchmarking baseline RAG implementation with Covid-19 dataset while preparing for GraphRAG development.
+## Current Focus
+- Baseline RAG benchmarking implementation
+- OpenSearch resource management
+- Development utilities enhancement
 
-## Recent Progress
-### Baseline RAG Implementation ✅
-- Core RAG System:
-  - Implemented BaselineRAG class with complete pipeline
-  - Integrated Cohere embeddings (1024 dimensions)
-  - Set up Claude 3.5 Sonnet for responses
-  - Configured OpenSearch with KNN vector search
-- Key Features:
-  - Batched document ingestion with metadata
-  - Cosine similarity search with top-k retrieval
-  - Context-aware response generation
-  - Comprehensive error handling
-  - Rate limiting and resource management
-  - Automatic OpenSearch setup and cleanup
-  - Duplicate document detection
+## Recent Changes
 
-### Evaluation Framework ✅
-- Metrics System:
-  - Implemented RAGMetricsEvaluator with async support
-  - Integrated full RAGAs metric suite:
-    - Faithfulness scoring
-    - Context precision/recall
-    - Response relevancy
-    - Entity tracking
-    - Noise sensitivity
-  - Added support for both labeled/unlabeled evaluation
-  - Implemented batching (20 calls/batch) with rate limiting
+### OpenSearch Management
+1. Created OpenSearchManager utility:
+   - Centralized domain management
+   - Configurable verbosity
+   - Identity-based access
+   - Automatic cleanup
 
-- Benchmarking Pipeline:
-  - Created baseline_rag_benchmark.ipynb
-  - Automated dataset loading and preparation
-  - Implemented comprehensive evaluation flow
-  - Added result saving and visualization
-  - Set up performance monitoring
-  - Added automatic OpenSearch domain management
-  - Implemented cost-aware resource cleanup
+2. Improved Error Handling:
+   - Better error messages
+   - Optional detailed output
+   - Status monitoring
+   - Progress tracking
 
-## Active Tasks
-1. Baseline RAG Testing:
-   - Running full benchmark suite on Covid-19 dataset
-   - Analyzing metric scores and patterns
-   - Identifying performance bottlenecks
-   - Testing example queries for qualitative assessment
-   - Documenting benchmark results
-   - Monitoring resource usage and costs
+3. Resource Management:
+   - Automatic identity detection
+   - Domain lifecycle management
+   - Cost optimization
+   - Cleanup procedures
 
-2. GraphRAG Development Planning:
-   - Designing Neptune database schema
-   - Planning entity extraction pipeline
-   - Architecting hybrid search system
-   - Defining graph traversal patterns
-   - Preparing integration tests
+### Development Tools
+1. Enhanced dev_utils:
+   - Automatic module discovery
+   - Dynamic reloading
+   - Test cases
+   - Debug workflows
 
-## Recent Decisions
-1. Dataset Selection:
-   - Using Origin of Covid-19 dataset for initial testing
-   - Implementing automatic dataset downloading
-   - Setting up document caching system
+2. Benchmark Improvements:
+   - Cleaner output
+   - Better progress tracking
+   - Resource management
+   - Error handling
 
-2. Implementation Strategy:
-   - Keeping implementations dataset-agnostic
-   - Git-ignoring vector stores and datasets
-   - Using local development with SageMaker deployment option
-   - Default to cleaning up resources after benchmarking
-   - Automatic OpenSearch domain management
+## Active Decisions
 
-## Known Issues & Considerations
-- Rate limiting needed for batch operations
-- Vector store size management required
-- Cache invalidation strategy needed
-- Performance optimization opportunities identified
-- OpenSearch costs need monitoring
-- Domain creation takes 10-15 minutes
+### OpenSearch Configuration
+1. Using t3.small.search instances:
+   - Cost-effective for benchmarking
+   - Sufficient for testing
+   - Easy to clean up
 
-## Next Actions
-1. Complete Covid-19 dataset benchmarking
-2. Begin Neptune setup for GraphRAG
-3. Design hybrid search architecture
-4. Document initial findings
-5. Monitor OpenSearch resource usage
+2. Identity-based access:
+   - Works with both roles and users
+   - Automatic detection
+   - Secure by default
 
-## Development Notes
-- All implementations maintain dataset agnosticism
-- setup.ipynb handles environment configuration
-- Local development workflow established:
-  1. Local code development and testing
-  2. SageMaker notebook deployment
-  3. Environment configuration
-  4. Benchmark execution
-- Resource management strategy:
-  1. Automatic OpenSearch domain creation
-  2. Default cleanup after benchmarking
-  3. Clear cost warnings for users
-  4. Duplicate document prevention
+3. Verbosity control:
+   - Default to minimal output
+   - Optional detailed logging
+   - Debug information when needed
+
+### Development Workflow
+1. Module Organization:
+   - Utilities by function
+   - Clear separation of concerns
+   - Reusable components
+
+2. Testing Strategy:
+   - Automatic discovery
+   - Regular reloading
+   - Easy debugging
+
+## Next Steps
+
+### Implementation
+1. Complete baseline benchmarking
+2. Add more test cases
+3. Enhance error handling
+4. Optimize resource usage
+
+### Documentation
+1. Update usage examples
+2. Add debug instructions
+3. Document new patterns
+4. Maintain best practices
+
+### Testing
+1. Add OpenSearch test cases
+2. Verify identity handling
+3. Test verbosity modes
+4. Validate cleanup procedures
+
+## Known Issues
+
+### OpenSearch
+1. Domain creation time:
+   - 10-15 minutes typical
+   - Progress monitoring added
+   - Status tracking improved
+
+2. Resource management:
+   - Cleanup importance
+   - Cost considerations
+   - Access control
+
+### Development
+1. Module reloading:
+   - Automatic discovery
+   - Dynamic updates
+   - Test coverage
+
+## Upcoming Work
+
+### Features
+1. Enhanced monitoring:
+   - Resource usage tracking
+   - Cost estimation
+   - Performance metrics
+
+2. Testing improvements:
+   - More test cases
+   - Better coverage
+   - Automated validation
+
+### Documentation
+1. Usage guides:
+   - Verbosity control
+   - Debug options
+   - Best practices
+
+2. Architecture docs:
+   - Resource patterns
+   - Security model
+   - Cost management

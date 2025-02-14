@@ -1,184 +1,142 @@
 # Technical Context
 
-## Core Technology Stack
+## Development Environment
+- Python 3.8+
+- Jupyter notebooks
+- AWS SageMaker for development and testing
 
-### Development Environment
-- Python 3.x with Conda environment management
-- Jupyter Notebooks for development
-- VSCode as primary editor
-- Git for version control
-- PowerShell for CLI operations
+## Core Technologies
 
 ### AWS Services
-#### Amazon Bedrock
-- LLM: Claude 3.5 Sonnet
-  - Purpose: Response generation
-  - Model ID: anthropic.claude-3-5-sonnet-20240620-v1:0
-- Embeddings: Cohere Embed English
-  - Purpose: Document and query embeddings
-  - Model ID: cohere.embed-english-v3
-  - Dimension: 1024
+1. Amazon Bedrock
+   - Claude 3.5 Sonnet for LLM responses
+   - Cohere Embed English v3 for embeddings
+2. Amazon OpenSearch
+   - Vector storage and similarity search
+   - t3.small.search instance type
+   - 10GB gp3 EBS storage
+   - Identity-based access control
+   - Configurable verbosity for setup and management
 
-#### Amazon OpenSearch
-- Purpose: Vector storage and similarity search
-- Features:
-  - KNN vector search
-  - Cosine similarity scoring
-  - Batch document ingestion
-  - Metadata storage
-- Configuration:
-  - Engine: OpenSearch 2.11
-  - Instance: t3.small.search
-  - Storage: 10GB gp3 EBS
-  - Single node (no replication)
-  - Public access with IAM auth
-- Management:
-  - Automatic domain creation
-  - Default cleanup enabled
-  - Duplicate document detection
-  - Cost monitoring
-  - Endpoint auto-detection (VPC/non-VPC)
+### Python Libraries
+1. boto3 for AWS interactions
+2. opensearchpy for vector operations
+3. requests_aws4auth for authentication
+4. tqdm for progress tracking
 
-#### Amazon Neptune (Planned)
-- Purpose: Graph database for GraphRAG
-- Features:
-  - Entity storage
-  - Relationship mapping
-  - Graph traversal
-  - Hybrid search integration
+## Development Tools
 
-## Implementation Architecture
+### Utility Modules
+1. utils.aws.opensearch_utils
+   - OpenSearchManager for domain lifecycle
+   - Automatic identity detection
+   - Configurable verbosity
+   - Resource cleanup management
 
-### RAG Components
-#### Baseline Implementation
-- Document Processing:
-  - Text cleaning and normalization
-  - Configurable chunking
-  - Metadata preservation
-  - Batch processing support
-  - Duplicate detection
-- Vector Storage:
-  - OpenSearch integration
-  - Embedding caching
-  - Similarity search optimization
-  - Resource cleanup
-- Response Generation:
-  - Context retrieval
-  - Prompt engineering
-  - LLM integration
+2. utils.notebook_utils
+   - dataset_utils for data loading
+   - document_utils for text processing
+   - importable for notebook imports
 
-#### GraphRAG (Planned)
-- Graph Database:
-  - Entity extraction
-  - Relationship mapping
-  - Graph traversal
-- Hybrid Search:
-  - Vector similarity
-  - Graph-based ranking
-  - Result fusion
+3. utils.metrics
+   - RAG evaluation metrics
+   - Benchmark comparisons
 
-### Evaluation Framework
-- RAGAs Integration:
-  - Faithfulness: Measures response accuracy against context
-  - Context Precision: Evaluates relevance of retrieved contexts
-  - Response Relevancy: Assesses answer relevance to query
-  - Context Recall: Measures coverage of reference information
-  - Context Entity Recall: Tracks entity preservation
-  - Noise Sensitivity: Tests robustness to context noise
+4. utils.visualization
+   - Comparison plots
+   - Results visualization
 
-- Dataset Support:
-  - Labeled Evaluation:
-    - Uses ground truth answers
-    - Comprehensive metric suite
-    - Accuracy benchmarking
-  - Unlabeled Evaluation:
-    - No reference answers needed
-    - Focus on response quality
-    - Consistency checking
-  - Batch Processing:
-    - Configurable batch sizes
-    - Rate limiting (20 calls/batch)
-    - Sleep time between batches (1s default)
+### Development Utilities
+1. dev_utils.ipynb
+   - Automatic module discovery
+   - Dynamic reloading
+   - Test cases
+   - Debug workflows
 
-- Implementation Comparison:
-  - Cross-implementation metrics:
-    - Standardized scoring
-    - Multiple comparison dimensions
-    - Performance deltas
-  - Aggregated Scoring:
-    - Weighted metric averaging
-    - Overall performance index
-    - Trend analysis
-  - Statistical Analysis:
-    - Confidence intervals
-    - Significance testing
-    - Distribution analysis
+## Infrastructure
 
-- Performance Monitoring:
-  - Resource Tracking:
-    - API call monitoring
-    - Memory usage tracking
-    - Processing time logs
-    - OpenSearch cost tracking
-  - Response Timing:
-    - Query latency
-    - Context retrieval speed
-    - Generation time
-  - Batch Statistics:
-    - Success rates
-    - Error patterns
-    - Throughput metrics
+### OpenSearch Configuration
+1. Domain Settings
+   - OpenSearch 2.11
+   - Single node deployment
+   - No dedicated master
+   - No zone awareness
 
-## Development Infrastructure
+2. Storage
+   - EBS gp3 volumes
+   - 10GB per instance
+   - 3000 IOPS
+   - 125 MB/s throughput
 
-### Environment Configuration
-- Conda environment: rag_bench
-- Python version: 3.x
-- Package management: conda/pip
+3. Security
+   - Identity-based access
+   - IAM role/user authentication
+   - Resource-level permissions
 
-### AWS Setup
-- Configuration via setup.ipynb:
-  - AWS credentials verification
-  - Service permissions check
-  - Environment variable setup
-- Required Permissions:
-  - Bedrock: invoke_model
-  - OpenSearch: full access
-  - Neptune: full access (planned)
+4. Management
+   - Automatic setup
+   - Status monitoring
+   - Resource cleanup
+   - Configurable verbosity
 
-### Core Dependencies
-- AWS Integration:
-  - boto3: AWS SDK
-  - requests-aws4auth: Authentication
-  - opensearchpy: OpenSearch client
-- RAG Components:
-  - llama-index: Dataset/document management
-  - RAGAs: Evaluation metrics
-- Utilities:
-  - tqdm: Progress tracking
-  - pandas: Data manipulation
-  - numpy: Numerical operations
-  - matplotlib/plotly: Visualization
+### Vector Store
+1. Index Configuration
+   - knn_vector field type
+   - 1024-dimension vectors
+   - Cosine similarity
 
-### Development Workflow
-1. Local Development:
-   - Code writing and testing
-   - AWS profile configuration
-   - Local environment setup
-2. SageMaker Deployment:
-   - Notebook environment setup
-   - Instance role configuration
-   - Dependency installation
-3. Production Pipeline:
-   - Automated testing
-   - Performance monitoring
-   - Resource optimization
-   - Cost tracking
+2. Document Storage
+   - Text content
+   - Metadata fields
+   - Vector embeddings
 
-## System Requirements
-- AWS account with service access
-- Python 3.x environment
-- Sufficient storage for datasets
-- Memory for batch processing
-- Network access for API calls
-- OpenSearch domain capacity
+## Development Patterns
+
+### Code Organization
+1. Utilities by function
+   - AWS interactions
+   - Data processing
+   - Evaluation metrics
+   - Visualization
+
+2. Notebook Structure
+   - Configuration
+   - Setup
+   - Processing
+   - Evaluation
+   - Cleanup
+
+### Testing
+1. Unit Tests
+   - Utility functions
+   - Data processing
+   - Metrics calculation
+
+2. Integration Tests
+   - RAG pipeline
+   - OpenSearch operations
+   - AWS service interactions
+
+## Deployment
+
+### SageMaker Setup
+1. Environment
+   - Python dependencies
+   - AWS credentials
+   - Environment variables
+
+2. Resource Management
+   - OpenSearch domain lifecycle
+   - Vector store cleanup
+   - Cost optimization
+
+### Local Development
+1. Setup
+   - Python environment
+   - AWS configuration
+   - Local dependencies
+
+2. Testing
+   - Unit tests
+   - Integration tests
+   - Benchmark runs

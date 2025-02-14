@@ -9,15 +9,17 @@ from typing import Dict, Optional, Any
 class OpenSearchManager:
     """Manages OpenSearch domain operations including setup, status checking, and cleanup."""
     
-    def __init__(self, domain_name: str, cleanup_enabled: bool = True):
+    def __init__(self, domain_name: str, cleanup_enabled: bool = True, verbose: bool = False):
         """Initialize OpenSearch manager.
         
         Args:
             domain_name: Name of the OpenSearch domain
             cleanup_enabled: Whether to enable cleanup on deletion
+            verbose: Whether to print detailed status information
         """
         self.domain_name = domain_name
         self.cleanup_enabled = cleanup_enabled
+        self.verbose = verbose
         self.client = boto3.client('opensearch')
         self.region = boto3.Session().region_name
         self._setup_identity()
@@ -75,7 +77,7 @@ class OpenSearchManager:
             
     def create_domain(self) -> Dict:
         """Create a new OpenSearch domain with standard configuration."""
-        return self.client.create_domain(
+        response = self.client.create_domain(
             DomainName=self.domain_name,
             EngineVersion='OpenSearch_2.11',
             ClusterConfig={
@@ -101,6 +103,12 @@ class OpenSearchManager:
                 }]
             })
         )
+        
+        if self.verbose:
+            print("\nDomain creation response:")
+            print(json.dumps(response, indent=2, default=self._serialize_datetime))
+            
+        return response
         
     def wait_for_domain(self, max_attempts: int = 40, delay: int = 30) -> str:
         """Wait for domain to become active.
@@ -132,8 +140,10 @@ class OpenSearchManager:
             time.sleep(delay)
             attempt += 1
             
-        print("\nFinal domain status:")
-        print(json.dumps(status['full_status'], indent=2, default=self._serialize_datetime))
+        if self.verbose:
+            print("\nFinal domain status:")
+            print(json.dumps(status['full_status'], indent=2, default=self._serialize_datetime))
+            
         raise TimeoutError(f"OpenSearch domain did not become active after {max_attempts * delay / 60:.1f} minutes")
         
     def setup_domain(self) -> str:
@@ -153,9 +163,9 @@ class OpenSearchManager:
         status = self.get_domain_status()
         if status['exists']:
             print(f"\nFound existing domain: {self.domain_name}")
-            print(f"Status: {status['stage']}")
-            print("Full domain status:")
-            print(json.dumps(status['full_status'], indent=2, default=self._serialize_datetime))
+            if self.verbose:
+                print("Full domain status:")
+                print(json.dumps(status['full_status'], indent=2, default=self._serialize_datetime))
             
             if status['endpoint']:
                 print(f"\nDomain is active with endpoint: {status['endpoint']}")
@@ -166,16 +176,14 @@ class OpenSearchManager:
         else:
             print(f"\nCreating new domain: {self.domain_name}")
             try:
-                response = self.create_domain()
-                print("\nDomain creation response:")
-                print(json.dumps(response, indent=2, default=self._serialize_datetime))
-                
+                self.create_domain()
                 print("\nWaiting for OpenSearch domain to be active (this may take 10-15 minutes)...")
                 return self.wait_for_domain()
                 
             except Exception as e:
                 print(f"\nError creating domain: {str(e)}")
-                print(f"Error type: {type(e)}")
+                if self.verbose:
+                    print(f"Error type: {type(e)}")
                 raise
                 
     def cleanup(self):
@@ -198,3 +206,5 @@ class OpenSearchManager:
             print("Note: Domain deletion may take 15-20 minutes to complete")
         except Exception as e:
             print(f"❌ Error during cleanup: {str(e)}")
+            if self.verbose:
+                print(f"Error type: {type(e)}")
