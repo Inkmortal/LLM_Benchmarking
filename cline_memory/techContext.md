@@ -9,8 +9,13 @@
 
 ### AWS Services
 1. Amazon Bedrock
-   - Claude 3.5 Sonnet for LLM responses
+   - Claude 3 Sonnet (anthropic.claude-3-sonnet-20240229-v1:0) for LLM responses
    - Cohere Embed English v3 for embeddings
+   - Custom BedrockLLM wrapper for RAGAs integration
+   - Identity-based access control
+   - Rate limiting and error handling
+   - Configurable temperature and max tokens
+
 2. Amazon OpenSearch
    - Vector storage and similarity search
    - t3.small.search instance type
@@ -36,37 +41,71 @@
    - Chunking enabled by default
    - Batch processing: 100 docs per batch
 
+### Evaluation Framework
+1. RAGAs Integration
+   - Custom BedrockLLM wrapper
+   - Faithfulness metrics
+   - Context precision/recall
+   - Answer relevancy
+   - Entity recall
+   - Noise sensitivity
+
+2. Visualization
+   - Matplotlib/Seaborn for plots
+   - Multiple visualization types:
+     - Bar plots
+     - Radar charts
+     - Heatmaps
+     - Line plots
+   - Customizable reports
+   - Progress tracking
+
 ### Python Libraries
-1. boto3 for AWS interactions
-2. opensearchpy for vector operations
-3. requests_aws4auth for authentication
-4. tqdm for progress tracking
-5. langchain-community for document processing
-6. pypdf for PDF handling
-7. python-magic for file type detection
-8. docx2txt for Word document processing
+1. Core Dependencies
+   - boto3 for AWS interactions
+   - opensearchpy for vector operations
+   - requests_aws4auth for authentication
+   - tqdm for progress tracking
+   - langchain-community for document processing
+   - ragas for evaluation metrics
+
+2. Data Processing
+   - pypdf for PDF handling
+   - python-magic for file type detection
+   - docx2txt for Word document processing
+   - llama-index for dataset management
+
+3. Visualization
+   - matplotlib for base plotting
+   - seaborn for enhanced visuals
+   - pandas for data manipulation
+   - numpy for numerical operations
 
 ## Development Tools
 
 ### Utility Modules
-1. utils.aws.opensearch_utils
-   - OpenSearchManager for domain lifecycle
+1. utils.aws
+   - opensearch_utils: Domain management
+   - bedrock_llm: LLM wrapper
    - Automatic identity detection
-   - Configurable verbosity
    - Resource cleanup management
 
-2. utils.notebook_utils
-   - dataset_utils for data loading
-   - document_utils for text processing
-   - importable for notebook imports
-
-3. utils.metrics
-   - RAG evaluation metrics
+2. utils.metrics
+   - rag_metrics: Evaluation metrics
+   - RAGAs integration
    - Benchmark comparisons
+   - Progress tracking
+
+3. utils.notebook_utils
+   - dataset_utils: Data loading
+   - document_utils: Text processing
+   - importable: Notebook imports
 
 4. utils.visualization
-   - Comparison plots
-   - Results visualization
+   - comparison_plots: Results visualization
+   - Multiple plot types
+   - Report generation
+   - Progress tracking
 
 ### Development Utilities
 1. dev_utils.ipynb

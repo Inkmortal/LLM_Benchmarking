@@ -15,15 +15,17 @@ flowchart TD
         doc[document_utils.py]
         os[opensearch_utils.py]
         imp[importable.py]
+        bedrock[bedrock_llm.py]
+        metrics[rag_metrics.py]
         ing -->|uses| doc
         impl -->|uses| os
         impl -->|imports via| imp
         ing -->|imports via| imp
+        metrics -->|uses| bedrock
     end
 
     subgraph Eval [Evaluation]
         bench[baseline_rag_benchmark.ipynb]
-        metrics[rag_metrics.py]
         viz[comparison_plots.py]
         bench -->|uses| impl
         bench -->|uses| metrics
@@ -59,18 +61,32 @@ flowchart TD
   - process_directory(): Batch processing
   - ingest_documents(): Main entry point
 
-### 3. utils/notebook_utils/document_utils.py
-- Primary: Text processing utilities
+### 3. utils/metrics/bedrock_llm.py (~80 lines)
+- Primary: AWS Bedrock LLM wrapper
 - Dependencies:
-  - None (standard library only)
+  - boto3: AWS SDK
+  - langchain_core: Base LLM interface
 - Used by:
-  - ingestion.ipynb: For text processing
-  - benchmark notebooks: For dataset loading
+  - rag_metrics.py: For RAG evaluation
 - Key interfaces:
-  - DocumentPreprocessor: Text chunking
-  - ingest_documents(): Utility wrapper
+  - BedrockLLM: Main wrapper class
+  - _call(): Execute LLM requests
+  - _generate(): Handle multiple prompts
 
-### 4. utils/aws/opensearch_utils.py
+### 4. utils/metrics/rag_metrics.py (~180 lines)
+- Primary: RAG evaluation metrics
+- Dependencies:
+  - ragas: Evaluation framework
+  - bedrock_llm.py: LLM wrapper
+  - comparison_plots.py: Visualization
+- Used by:
+  - benchmark notebooks: For evaluation
+- Key interfaces:
+  - RAGMetricsEvaluator: Main evaluator class
+  - evaluate_labeled(): Full evaluation
+  - evaluate_unlabeled(): Partial evaluation
+
+### 5. utils/aws/opensearch_utils.py (~160 lines)
 - Primary: OpenSearch management
 - Dependencies:
   - boto3: AWS SDK
@@ -81,7 +97,30 @@ flowchart TD
 - Key interfaces:
   - OpenSearchManager: Domain lifecycle
 
-### 5. utils/notebook_utils/importable.py
+### 6. utils/notebook_utils/document_utils.py (~150 lines)
+- Primary: Text processing utilities
+- Dependencies:
+  - None (standard library only)
+- Used by:
+  - ingestion.ipynb: For text processing
+  - benchmark notebooks: For dataset loading
+- Key interfaces:
+  - DocumentPreprocessor: Text chunking
+  - ingest_documents(): Utility wrapper
+
+### 7. utils/notebook_utils/dataset_utils.py (~120 lines)
+- Primary: Dataset management
+- Dependencies:
+  - llama_index: Dataset loading
+  - document_utils.py: Processing
+- Used by:
+  - benchmark notebooks: For data loading
+- Key interfaces:
+  - download_dataset(): Get datasets
+  - load_labeled_dataset(): Load with answers
+  - prepare_documents_for_rag(): Format for ingestion
+
+### 8. utils/notebook_utils/importable.py (~100 lines)
 - Primary: Notebook import utility
 - Dependencies:
   - nbformat: Notebook parsing
@@ -89,19 +128,20 @@ flowchart TD
   - All notebooks for imports
 - Key interfaces:
   - notebook_to_module(): Main converter
+  - NotebookLoader: Context manager
 
-### 6. evaluation_pipelines/rag_evaluations/baseline_rag_benchmark.ipynb
-- Primary: RAG evaluation
+### 9. utils/visualization/comparison_plots.py (~180 lines)
+- Primary: Visualization utilities
 - Dependencies:
-  - implementation.ipynb: RAG system
-  - rag_metrics.py: Evaluation metrics
-  - comparison_plots.py: Visualization
-  - opensearch_utils.py: Resource management
+  - matplotlib: Base plotting
+  - seaborn: Enhanced visuals
 - Used by:
-  - Results analysis and reporting
+  - benchmark notebooks: For results
+  - rag_metrics.py: For evaluation plots
 - Key interfaces:
-  - run_evaluation(): Main benchmark
-  - test_queries(): Example usage
+  - BenchmarkVisualizer: Main visualization class
+  - plot_comparison(): Generic plotting
+  - create_comparison_report(): Full reports
 
 ## Code Patterns
 
@@ -158,35 +198,51 @@ flowchart LR
 ```
 
 ## File Size Management
-- All files must stay under 200 lines
-- Current line counts:
-  - implementation.ipynb: ~180 lines
-  - ingestion.ipynb: ~180 lines
-  - document_utils.py: ~150 lines
-  - opensearch_utils.py: ~160 lines
+All files are confirmed to be under 200 lines:
+- implementation.ipynb: ~180 lines
+- ingestion.ipynb: ~180 lines
+- bedrock_llm.py: ~80 lines
+- rag_metrics.py: ~180 lines
+- opensearch_utils.py: ~160 lines
+- document_utils.py: ~150 lines
+- dataset_utils.py: ~120 lines
+- importable.py: ~100 lines
+- comparison_plots.py: ~180 lines
 
 ## Testing Coverage
 - Unit tests needed for:
   - document_utils.py
   - opensearch_utils.py
   - importable.py
+  - bedrock_llm.py
+  - rag_metrics.py
 - Integration tests needed for:
   - Document processing pipeline
   - Vector storage operations
   - End-to-end RAG workflow
+  - Evaluation pipeline
 
 ## Future Improvements
 1. Document Processing:
    - Add more file type support
    - Improve chunking strategies
    - Enhance metadata handling
+   - Add caching layer
 
 2. Vector Operations:
    - Add caching layer
    - Optimize batch sizes
    - Improve error recovery
+   - Add async operations
 
 3. Testing:
    - Add automated tests
    - Create test datasets
    - Measure performance metrics
+   - Add integration tests
+
+4. Evaluation:
+   - Add custom metrics
+   - Enhance visualization
+   - Add batch evaluation
+   - Improve error analysis

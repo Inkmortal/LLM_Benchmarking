@@ -2,6 +2,25 @@
 
 ## Completed Features ✅
 
+### RAG Evaluation System
+1. BedrockLLM Integration:
+   - Custom wrapper for RAGAs
+   - Claude 3 Sonnet support
+   - Configurable parameters
+   - Error handling
+
+2. RAGAs Framework:
+   - Full metrics integration
+   - Labeled/unlabeled support
+   - Progress tracking
+   - Result analysis
+
+3. Visualization:
+   - Multiple plot types
+   - Split metric views
+   - Report generation
+   - Progress tracking
+
 ### Document Processing
 1. Core Pipeline:
    - Langchain document loaders
@@ -43,107 +62,70 @@
 ## In Progress 🔄
 
 ### RAG Evaluation Pipeline
-1. RAGAs Integration:
-   - Fixed parameter names
-   - Updated API calls
-   - Added error handling
-   - Progress tracking
+1. Performance Optimization:
+   - Batch processing
+   - Memory management
+   - Rate limiting
+   - Caching system
 
-2. Progress Visualization:
-   - tqdm progress bars
-   - Status updates
-   - Error reporting
-   - Completion tracking
+2. Custom Metrics:
+   - Use case specific metrics
+   - Extended analysis
+   - Performance tracking
+   - Error analysis
 
 3. Results Management:
-   - Configuration saving
-   - Metrics storage
-   - Progress tracking
+   - Advanced visualization
+   - Detailed reporting
+   - Trend analysis
    - Comparison tools
 
-### OpenSearch Query Debugging
-1. Test Script Created:
-   - test_opensearch_query.ipynb
-   - Multiple query approaches
-   - Detailed error analysis
-   - Using existing domain
-
-2. Query Variations:
-   - Original script query
-   - Alternative script syntax
-   - k-NN query fallback
-   - Error reporting
-
-3. Test Environment:
-   - Using baseline-rag-benchmark-store
-   - Preserving existing index
-   - Debug-focused setup
-   - No cleanup during testing
-
-### Testing
+### Testing Framework
 1. Unit Tests:
-   - document_utils.py
-   - opensearch_utils.py
-   - importable.py
+   - BedrockLLM wrapper
+   - RAG metrics
+   - Document processing
+   - Visualization
 
 2. Integration Tests:
-   - Document pipeline
-   - Vector operations
-   - End-to-end flow
+   - End-to-end pipeline
+   - Resource management
+   - Error scenarios
+   - Performance metrics
 
-### Documentation
-1. Usage Guides:
-   - Setup instructions
-   - Configuration options
-   - Error handling
+3. Documentation:
+   - Test coverage
+   - Setup guides
+   - Usage examples
    - Best practices
-
-2. Performance Guides:
-   - Resource optimization
-   - Cost management
-   - Batch processing
-   - Caching strategies
 
 ## Pending Tasks 📋
 
-### RAG Evaluation
-1. Run Updated Benchmark:
-   - Test fixed RAGAs integration
-   - Verify progress tracking
-   - Analyze metrics
-   - Document results
+### Performance Optimization
+1. Batch Processing:
+   - Smart batching
+   - Progress tracking
+   - Rate limit handling
+   - Resource monitoring
 
-2. Benchmark Analysis:
-   - Compare approaches
-   - Analyze performance
-   - Document findings
-   - Make recommendations
+2. Memory Management:
+   - Data structure optimization
+   - Resource cleanup
+   - Stream processing
+   - Usage monitoring
 
-### OpenSearch Query Fix
-1. Run Test Notebook:
-   - Execute query variations
-   - Analyze error details
-   - Document findings
-   - Implement solution
+### Error Handling
+1. Retry Mechanisms:
+   - Rate limit handling
+   - Service recovery
+   - Resource cleanup
+   - Error reporting
 
-2. Update Implementation:
-   - Apply working solution
-   - Add error handling
-   - Test changes
-   - Update documentation
-
-### Testing
-1. Automated Tests:
-   - Test suite setup
-   - CI/CD integration
+2. Logging System:
+   - Detailed logs
+   - Error tracking
    - Performance metrics
-   - Coverage reports
-
-2. Benchmark Tests:
-   - Dataset preparation
-   - Metric collection
-   - Result analysis
-   - Visualization
+   - Resource usage
 
 ### Documentation
 1. API Documentation:
@@ -160,25 +142,18 @@
 
 ## Known Issues 🐛
 
-### OpenSearch Query
-1. Script Compilation:
-   - Error in semantic search
-   - Testing alternative approaches
-   - Detailed error analysis
-   - Solution in progress
+### Performance
+1. Rate Limits:
+   - Large batch processing
+   - API call frequency
+   - Resource usage
+   - Cost implications
 
-2. Resource Management:
-   - OpenSearch startup time
-   - Cost optimization needed
-   - Cleanup verification
-   - Error handling gaps
-
-### Document Processing
-1. Performance:
-   - Large batch memory usage
-   - Chunking optimization needed
-   - File type support limited
-   - Error recovery improvements
+2. Memory Usage:
+   - Large datasets
+   - Batch processing
+   - Resource cleanup
+   - Optimization needed
 
 ### Testing
 1. Coverage:
@@ -187,56 +162,62 @@
    - Performance tests missing
    - Edge cases untested
 
+2. Documentation:
+   - Setup guides needed
+   - Usage examples needed
+   - Error handling docs
+   - Best practices
+
 ## Next Steps 🎯
 
 ### Short Term
-1. RAG Evaluation:
-   - Run updated benchmark
-   - Test progress tracking
-   - Analyze results
-   - Document findings
+1. Performance:
+   - Implement batching
+   - Add caching
+   - Optimize memory
+   - Monitor resources
 
-2. Documentation:
-   - Finish usage guides
-   - Add error handling docs
-   - Complete API reference
-   - Update examples
+2. Testing:
+   - Add unit tests
+   - Create integration tests
+   - Document coverage
+   - Track metrics
 
 ### Long Term
 1. Features:
-   - More file types
-   - Better chunking
-   - Caching layer
-   - Performance optimization
-
-2. Infrastructure:
+   - Custom metrics
+   - Advanced visualization
    - Automated testing
    - Performance monitoring
-   - Cost tracking
+
+2. Infrastructure:
    - Resource optimization
+   - Cost tracking
+   - Automated deployment
+   - Monitoring system
 
 ## Timeline 📅
 
 ### Phase 1: Core Implementation ✅
-- Document processing pipeline
-- Vector storage integration
-- Basic error handling
-- Initial documentation
+- RAG evaluation system
+- Document processing
+- Resource management
+- Basic visualization
 
 ### Phase 2: Testing & Documentation 🔄
 - Unit test development
-- Integration test setup
+- Integration testing
 - Usage documentation
 - API reference
 
-### Phase 3: RAG Evaluation 🔄
-- RAGAs integration fix
-- Progress tracking
-- Results analysis
-- Documentation update
+### Phase 3: Performance Optimization 🔄
+- Batch processing
+- Memory management
+- Resource monitoring
+- Cost optimization
 
-### Phase 4: Optimization 📋
-- Performance improvements
-- Resource optimization
-- Cost management
-- Caching implementation
+### Phase 4: Advanced Features 📋
+- Custom metrics
+- Advanced visualization
+- Automated testing
+- Monitoring system
