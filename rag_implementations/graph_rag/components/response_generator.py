@@ -3,9 +3,9 @@
 import json
 import time
 import random
+import boto3
 from typing import Dict, Any, List
 from botocore.exceptions import ClientError
-from utils.metrics.bedrock_llm import BedrockLLM
 
 class ResponseGenerator:
     """Handles response generation using Bedrock."""
@@ -30,8 +30,8 @@ class ResponseGenerator:
         self.min_delay = min_delay
         self.max_delay = max_delay
         
-        # Initialize LLM
-        self.llm = BedrockLLM()
+        # Initialize Bedrock client
+        self.bedrock = boto3.client('bedrock-runtime')
     
     def _invoke_with_retry(self, body: Dict) -> Dict:
         """Invoke Bedrock model with exponential backoff retry.
@@ -48,7 +48,7 @@ class ResponseGenerator:
         last_exception = None
         for attempt in range(self.max_retries):
             try:
-                response = self.llm.bedrock.invoke_model(
+                response = self.bedrock.invoke_model(
                     modelId=self.model_id,
                     body=json.dumps(body)
                 )
