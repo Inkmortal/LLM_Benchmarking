@@ -9,18 +9,15 @@ class GraphStore:
     def __init__(
         self,
         cluster_name: str,
-        instance_type: str = "db.r6g.xlarge",
         enable_audit: bool = True
     ):
         """Initialize graph store.
         
         Args:
             cluster_name: Name for the Neptune cluster
-            instance_type: Neptune instance type
             enable_audit: Enable audit logging
         """
         self.cluster_name = cluster_name
-        self.instance_type = instance_type
         self.enable_audit = enable_audit
         
         # Initialize Neptune
@@ -31,8 +28,8 @@ class GraphStore:
         # Set up Neptune cluster
         self.neptune_manager = NeptuneManager(
             cluster_name=self.cluster_name,
-            instance_type=self.instance_type,
-            cleanup_enabled=True
+            cleanup_enabled=True,
+            verbose=self.enable_audit
         )
         endpoint = self.neptune_manager.setup_cluster()
         
