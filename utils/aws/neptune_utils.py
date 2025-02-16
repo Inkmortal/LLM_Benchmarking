@@ -37,6 +37,7 @@ class NeptuneManager:
         
         # Track created resources
         self.cluster_id = None
+        self.instance_id = None
         self.endpoint = None
         self.param_group_name = f"{cluster_name}-params"
         
@@ -63,6 +64,37 @@ class NeptuneManager:
             if e.response['Error']['Code'] != 'DBParameterGroupAlreadyExists':
                 raise
             self._log(f"Using existing parameter group: {self.param_group_name}")
+    
+    def _ensure_instance(self) -> None:
+        """Ensure cluster has at least one instance."""
+        # Check existing instances
+        instances = self.neptune.describe_db_instances(
+            Filters=[{'Name': 'db-cluster-id', 'Values': [self.cluster_id]}]
+        )
+        
+        if not instances['DBInstances']:
+            self._log("Creating serverless instance...")
+            self.instance_id = f"{self.cluster_id}-instance"
+            
+            # Create instance
+            self.neptune.create_db_instance(
+                DBInstanceIdentifier=self.instance_id,
+                DBClusterIdentifier=self.cluster_id,
+                Engine='neptune',
+                DBInstanceClass='db.serverless'
+            )
+            
+            # Wait for instance
+            self._log("Waiting for instance to be available...")
+            waiter = self.neptune.get_waiter('db_instance_available')
+            waiter.wait(
+                DBInstanceIdentifier=self.instance_id,
+                WaiterConfig={'Delay': 30, 'MaxAttempts': 60}
+            )
+            self._log("Instance is available")
+        else:
+            self.instance_id = instances['DBInstances'][0]['DBInstanceIdentifier']
+            self._log(f"Using existing instance: {self.instance_id}")
     
     def setup_cluster(self) -> str:
         """
@@ -126,6 +158,13 @@ class NeptuneManager:
                 else:
                     raise
             
+            # Ensure instance exists
+            self._ensure_instance()
+            
+            # Wait for DNS propagation
+            self._log("Waiting for endpoint to be resolvable...")
+            time.sleep(30)  # Give DNS some time to propagate
+            
             return self.endpoint
             
         except Exception as e:
@@ -138,23 +177,43 @@ class NeptuneManager:
             return
             
         try:
+            if self.instance_id:
+                self._log(f"Deleting instance: {self.instance_id}")
+                try:
+                    self.neptune.delete_db_instance(
+                        DBInstanceIdentifier=self.instance_id,
+                        SkipFinalSnapshot=True
+                    )
+                    
+                    # Wait for instance deletion
+                    self._log("Waiting for instance to be deleted...")
+                    waiter = self.neptune.get_waiter('db_instance_deleted')
+                    waiter.wait(
+                        DBInstanceIdentifier=self.instance_id,
+                        WaiterConfig={'Delay': 30, 'MaxAttempts': 60}
+                    )
+                except ClientError as e:
+                    if e.response['Error']['Code'] != 'DBInstanceNotFound':
+                        raise
+            
             if self.cluster_id:
-                self._log(f"Cleaning up Neptune cluster: {self.cluster_id}")
-                
-                # Delete cluster
                 self._log(f"Deleting cluster: {self.cluster_id}")
-                self.neptune.delete_db_cluster(
-                    DBClusterIdentifier=self.cluster_id,
-                    SkipFinalSnapshot=True
-                )
-                
-                # Wait for cluster to be deleted
-                self._log("Waiting for cluster to be deleted...")
-                waiter = self.neptune.get_waiter('db_cluster_deleted')
-                waiter.wait(
-                    DBClusterIdentifier=self.cluster_id,
-                    WaiterConfig={'Delay': 30, 'MaxAttempts': 60}
-                )
+                try:
+                    self.neptune.delete_db_cluster(
+                        DBClusterIdentifier=self.cluster_id,
+                        SkipFinalSnapshot=True
+                    )
+                    
+                    # Wait for cluster deletion
+                    self._log("Waiting for cluster to be deleted...")
+                    waiter = self.neptune.get_waiter('db_cluster_deleted')
+                    waiter.wait(
+                        DBClusterIdentifier=self.cluster_id,
+                        WaiterConfig={'Delay': 30, 'MaxAttempts': 60}
+                    )
+                except ClientError as e:
+                    if e.response['Error']['Code'] != 'DBClusterNotFoundFault':
+                        raise
                 
                 # Delete parameter group
                 try:
@@ -177,24 +236,47 @@ class NeptuneGraph:
     Interface for working with Neptune graph database.
     """
     
-    def __init__(self, endpoint: str):
+    def __init__(
+        self,
+        endpoint: str,
+        max_retries: int = 5,
+        retry_delay: float = 1.0
+    ):
         """
         Initialize Neptune graph interface.
         
         Args:
             endpoint: Neptune cluster endpoint
+            max_retries: Maximum connection retry attempts
+            retry_delay: Initial delay between retries (doubles each attempt)
         """
         self.endpoint = endpoint
         
-        # Initialize Gremlin client
+        # Initialize Gremlin client with retries
         from gremlin_python.driver.driver_remote_connection import DriverRemoteConnection
         from gremlin_python.structure.graph import Graph
         
-        self.connection = DriverRemoteConnection(
-            f'wss://{endpoint}:8182/gremlin',
-            'g'
-        )
-        self.g = Graph().traversal().withRemote(self.connection)
+        last_error = None
+        for attempt in range(max_retries):
+            try:
+                self.connection = DriverRemoteConnection(
+                    f'wss://{endpoint}:8182/gremlin',
+                    'g'
+                )
+                self.g = Graph().traversal().withRemote(self.connection)
+                
+                # Test connection
+                self.g.V().limit(1).toList()
+                return  # Success
+                
+            except Exception as e:
+                last_error = e
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay * (2 ** attempt))  # Exponential backoff
+                    continue
+                raise Exception(
+                    f"Failed to connect to Neptune after {max_retries} attempts"
+                ) from last_error
     
     def close(self):
         """Close connection to Neptune."""
