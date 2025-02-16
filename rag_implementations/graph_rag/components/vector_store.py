@@ -2,7 +2,11 @@
 
 import json
 import hashlib
+import boto3
+import requests
 from typing import Dict, Any, List, Optional, Literal
+from requests_aws4auth import AWS4Auth
+from opensearchpy import OpenSearch, RequestsHttpConnection
 from utils.aws.opensearch_utils import OpenSearchManager
 
 class VectorStore:
@@ -41,59 +45,92 @@ class VectorStore:
         hash_str = hash_obj.hexdigest()[:8]  # Use first 8 chars of hash
         return f"graph-rag-{hash_str}"
     
+    def _get_opensearch_client(self, endpoint: str) -> OpenSearch:
+        """Create OpenSearch client with AWS authentication."""
+        region = boto3.Session().region_name
+        credentials = boto3.Session().get_credentials()
+        aws_auth = AWS4Auth(
+            credentials.access_key,
+            credentials.secret_key,
+            region,
+            'es',
+            session_token=credentials.token
+        )
+        
+        return OpenSearch(
+            hosts=[{'host': endpoint, 'port': 443}],
+            http_auth=aws_auth,
+            use_ssl=True,
+            verify_certs=True,
+            connection_class=RequestsHttpConnection
+        )
+    
     def _init_vector_store(self):
         """Initialize OpenSearch vector store connection."""
-        self.opensearch = OpenSearchManager(
+        # Set up domain
+        self.opensearch_manager = OpenSearchManager(
             domain_name=self._get_domain_name(),
             cleanup_enabled=True
         )
-        endpoint = self.opensearch.setup_domain()
+        endpoint = self.opensearch_manager.setup_domain()
+        
+        # Get domain endpoint without https:// and port
+        if endpoint.startswith('https://'):
+            endpoint = endpoint[8:]
+        if ':' in endpoint:
+            endpoint = endpoint.split(':')[0]
+        
+        # Create OpenSearch client
+        self.opensearch = self._get_opensearch_client(endpoint)
         
         # Create index with vector search settings
         settings = {
-            "number_of_shards": 1,
-            "number_of_replicas": 0,
-            "knn": {
-                "algo_param": {
-                    "ef_search": 512  # Higher = more accurate but slower
+            "settings": {
+                "number_of_shards": 1,
+                "number_of_replicas": 0,
+                "knn": {
+                    "algo_param": {
+                        "ef_search": 512  # Higher = more accurate but slower
+                    }
                 }
-            }
-        }
-        settings.update(self.index_settings)
-        
-        mapping = {
-            "properties": {
-                "content": {"type": "text"},
-                "metadata": {"type": "object"},
-                "vector": {
-                    "type": "knn_vector",
-                    "dimension": 1024,  # Cohere embedding dimension
-                    "method": {
-                        "name": "hnsw",
-                        "space_type": "cosinesimil",
-                        "engine": "nmslib",
-                        "parameters": {
-                            "ef_construction": 512,
-                            "m": 16
+            },
+            "mappings": {
+                "properties": {
+                    "content": {"type": "text"},
+                    "metadata": {"type": "object"},
+                    "vector": {
+                        "type": "knn_vector",
+                        "dimension": 1024,  # Cohere embedding dimension
+                        "method": {
+                            "name": "hnsw",
+                            "space_type": "cosinesimil",
+                            "engine": "nmslib",
+                            "parameters": {
+                                "ef_construction": 512,
+                                "m": 16
+                            }
                         }
                     }
                 }
             }
         }
         
+        # Update settings
+        if self.index_settings:
+            settings["settings"].update(self.index_settings)
+        
         # Update KNN parameters
         if self.knn_params:
-            mapping["properties"]["vector"]["method"]["parameters"].update(
+            settings["mappings"]["properties"]["vector"]["method"]["parameters"].update(
                 self.knn_params
             )
         
-        self.opensearch.create_index(
-            index_name=self.index_name,
-            settings={
-                "settings": settings,
-                "mappings": mapping
-            }
-        )
+        # Create index if it doesn't exist
+        if not self.opensearch.indices.exists(index=self.index_name):
+            self.opensearch.indices.create(
+                index=self.index_name,
+                body=settings
+            )
     
     def store_document(
         self,
@@ -193,5 +230,5 @@ class VectorStore:
     
     def cleanup(self):
         """Clean up OpenSearch resources."""
-        if self.opensearch:
-            self.opensearch.cleanup()
+        if self.opensearch_manager:
+            self.opensearch_manager.cleanup()
