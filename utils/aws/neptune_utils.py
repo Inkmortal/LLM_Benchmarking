@@ -4,6 +4,7 @@ Utilities for working with Amazon Neptune graph database.
 
 import os
 import time
+import json
 import boto3
 from typing import Dict, Any, Optional, List
 from botocore.exceptions import ClientError
@@ -16,7 +17,6 @@ class NeptuneManager:
     def __init__(
         self,
         cluster_name: str,
-        instance_type: str = "db.r6g.xlarge",
         cleanup_enabled: bool = True,
         verbose: bool = True
     ):
@@ -25,21 +25,24 @@ class NeptuneManager:
         
         Args:
             cluster_name: Name for the Neptune cluster
-            instance_type: Neptune instance type
             cleanup_enabled: Whether to enable cleanup on deletion
             verbose: Whether to print detailed status messages
         """
         self.cluster_name = cluster_name
-        self.instance_type = instance_type
         self.cleanup_enabled = cleanup_enabled
         self.verbose = verbose
         
-        # Initialize AWS client
+        # Initialize AWS clients
         self.neptune = boto3.client('neptune')
         
         # Track created resources
         self.cluster_id = None
         self.endpoint = None
+        
+        # Get identity for IAM auth
+        sts = boto3.client('sts')
+        self.identity = sts.get_caller_identity()
+        self.current_arn = self.identity['Arn']
     
     def _log(self, message: str) -> None:
         """Print message if verbose mode is enabled."""
@@ -69,31 +72,21 @@ class NeptuneManager:
                     # Create new cluster
                     self._log(f"Creating Neptune cluster: {self.cluster_name}")
                     
-                    # Create cluster
+                    # Create cluster with serverless configuration
                     response = self.neptune.create_db_cluster(
                         DBClusterIdentifier=self.cluster_name,
                         Engine='neptune',
                         EngineVersion='1.2.1.0',
-                        DBClusterParameterGroupName='default.neptune1',
-                        VpcSecurityGroupIds=['default'],
-                        AvailabilityZones=['us-west-2a'],
-                        Port=8182,
-                        DBSubnetGroupName='default',
-                        BackupRetentionPeriod=1,
+                        ServerlessV2ScalingConfiguration={
+                            'MinCapacity': 1.0,
+                            'MaxCapacity': 8.0
+                        },
+                        IAMDatabaseAuthenticationEnabled=True,
                         DeletionProtection=False
                     )
                     
                     cluster = response['DBCluster']
                     self.cluster_id = cluster['DBClusterIdentifier']
-                    
-                    # Create instance
-                    self.neptune.create_db_instance(
-                        DBInstanceIdentifier=f"{self.cluster_name}-instance-1",
-                        DBInstanceClass=self.instance_type,
-                        Engine='neptune',
-                        DBClusterIdentifier=self.cluster_id,
-                        AvailabilityZone='us-west-2a'
-                    )
                     
                     # Wait for cluster to be available
                     self._log("Waiting for cluster to be available...")
@@ -127,31 +120,6 @@ class NeptuneManager:
         try:
             if self.cluster_id:
                 self._log(f"Cleaning up Neptune cluster: {self.cluster_id}")
-                
-                # Delete instances
-                response = self.neptune.describe_db_instances(
-                    Filters=[{
-                        'Name': 'db-cluster-id',
-                        'Values': [self.cluster_id]
-                    }]
-                )
-                
-                for instance in response['DBInstances']:
-                    instance_id = instance['DBInstanceIdentifier']
-                    self._log(f"Deleting instance: {instance_id}")
-                    self.neptune.delete_db_instance(
-                        DBInstanceIdentifier=instance_id,
-                        SkipFinalSnapshot=True
-                    )
-                
-                # Wait for instances to be deleted
-                self._log("Waiting for instances to be deleted...")
-                waiter = self.neptune.get_waiter('db_instance_deleted')
-                for instance in response['DBInstances']:
-                    waiter.wait(
-                        DBInstanceIdentifier=instance['DBInstanceIdentifier'],
-                        WaiterConfig={'Delay': 30, 'MaxAttempts': 60}
-                    )
                 
                 # Delete cluster
                 self._log(f"Deleting cluster: {self.cluster_id}")
