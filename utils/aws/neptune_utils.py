@@ -6,12 +6,13 @@ import os
 import time
 import json
 import boto3
-import asyncio
-import aiohttp
+import socket
 from typing import Dict, Any, Optional, List
 from botocore.exceptions import ClientError
+from botocore.auth import SigV4Auth
+from botocore.awsrequest import AWSRequest
 from gremlin_python.driver.driver_remote_connection import DriverRemoteConnection
-from gremlin_python.structure.graph import Graph
+from gremlin_python.process.anonymous_traversal import traversal
 
 class NeptuneManager:
     """
@@ -166,6 +167,27 @@ class NeptuneManager:
             else:
                 self._log(f"Using existing instance: {self.instance_id}")
     
+    def _check_dns_propagation(self, endpoint: str, timeout: int = 300) -> None:
+        """Check if DNS has propagated for endpoint.
+        
+        Args:
+            endpoint: Endpoint to check
+            timeout: Maximum wait time in seconds (default 5 minutes)
+        """
+        self._log("Checking DNS propagation...")
+        start_time = time.time()
+        while True:
+            try:
+                # Try to resolve the hostname
+                socket.gethostbyname(endpoint)
+                self._log("DNS resolution successful")
+                return
+            except socket.gaierror:
+                if time.time() - start_time > timeout:
+                    raise Exception(f"DNS propagation timeout for endpoint: {endpoint}")
+                self._log("Waiting for DNS propagation...")
+                time.sleep(10)  # Check every 10 seconds
+    
     def setup_cluster(self) -> str:
         """
         Set up Neptune cluster and return endpoint.
@@ -227,10 +249,9 @@ class NeptuneManager:
             # Ensure instance exists and is ready
             self._ensure_instance()
             
-            # Only wait for DNS if we created new resources
+            # Only check DNS if we created new resources
             if self._resources_created:
-                self._log("Waiting for endpoint to be resolvable...")
-                time.sleep(60)  # Give DNS time to propagate
+                self._check_dns_propagation(self.endpoint)
             
             return self.endpoint
             
@@ -338,8 +359,6 @@ class NeptuneGraph:
         self.retry_delay = retry_delay
         
         # Initialize connection state
-        self._session = None
-        self._loop = None
         self.connection = None
         self.g = None
         
@@ -348,22 +367,23 @@ class NeptuneGraph:
     
     def _connect_with_retries(self):
         """Initialize connection with retries."""
-        # Set up event loop
-        self._loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self._loop)
+        database_url = f"wss://{self.endpoint}:8182/gremlin"
+        
+        # Get AWS credentials for IAM auth
+        creds = boto3.Session().get_credentials().get_frozen_credentials()
+        request = AWSRequest(method="GET", url=database_url, data=None)
+        SigV4Auth(creds, "neptune-db", boto3.Session().region_name).add_auth(request)
         
         last_error = None
         for attempt in range(self.max_retries):
             try:
-                # Create new session for each attempt
-                self._session = aiohttp.ClientSession()
-                
-                # Initialize Gremlin connection
+                # Initialize Gremlin connection with IAM auth
                 self.connection = DriverRemoteConnection(
-                    f'wss://{self.endpoint}:8182/gremlin',
-                    'g'
+                    database_url,
+                    'g',
+                    headers=request.headers.items()
                 )
-                self.g = Graph().traversal().withRemote(self.connection)
+                self.g = traversal().withRemote(self.connection)
                 
                 # Test connection
                 self.g.V().limit(1).toList()
@@ -371,7 +391,9 @@ class NeptuneGraph:
                 
             except Exception as e:
                 last_error = e
-                self._cleanup_session()
+                if self.connection:
+                    self.connection.close()
+                    self.connection = None
                 
                 if attempt < self.max_retries - 1:
                     delay = min(60, self.retry_delay * (2 ** attempt))
@@ -382,23 +404,11 @@ class NeptuneGraph:
                     f"Failed to connect to Neptune after {self.max_retries} attempts"
                 ) from last_error
     
-    def _cleanup_session(self):
-        """Clean up aiohttp session."""
-        if self._session and not self._session.closed:
-            self._loop.run_until_complete(self._session.close())
-        self._session = None
-    
     def close(self):
         """Close all connections."""
         if self.connection:
             self.connection.close()
             self.connection = None
-        
-        self._cleanup_session()
-        
-        if self._loop:
-            self._loop.close()
-            self._loop = None
     
     def add_vertex(
         self,

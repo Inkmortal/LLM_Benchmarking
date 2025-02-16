@@ -5,6 +5,7 @@ import time
 import datetime
 import boto3
 from typing import Dict, Optional, Any
+from botocore.exceptions import ClientError
 
 class OpenSearchManager:
     """Manages OpenSearch domain operations including setup, status checking, and cleanup."""
@@ -42,6 +43,18 @@ class OpenSearchManager:
         try:
             response = self.client.describe_domain(DomainName=self.domain_name)
             status = response['DomainStatus']
+            
+            # Check if domain is being deleted
+            if status.get('Deleted') or status.get('DeletionDate'):
+                return {
+                    'exists': True,
+                    'processing': True,
+                    'stage': 'Deleting',
+                    'created': False,
+                    'endpoint': None,
+                    'elapsed_minutes': 0,
+                    'full_status': status
+                }
             
             # Calculate elapsed time
             elapsed = 0
@@ -83,18 +96,47 @@ class OpenSearchManager:
                 'elapsed_minutes': elapsed,
                 'full_status': status  # Include full status for debugging
             }
-        except self.client.exceptions.ResourceNotFoundException:
-            # Calculate elapsed time from instance creation
-            elapsed = (datetime.datetime.now() - self.start_time).total_seconds() / 60.0
-            return {
-                'exists': False,
-                'processing': False,
-                'stage': 'NotFound',
-                'created': False,
-                'endpoint': None,
-                'elapsed_minutes': elapsed,
-                'full_status': None
-            }
+        except ClientError as e:
+            if e.response['Error']['Code'] == 'ResourceNotFoundException':
+                # Calculate elapsed time from instance creation
+                elapsed = (datetime.datetime.now() - self.start_time).total_seconds() / 60.0
+                return {
+                    'exists': False,
+                    'processing': False,
+                    'stage': 'NotFound',
+                    'created': False,
+                    'endpoint': None,
+                    'elapsed_minutes': elapsed,
+                    'full_status': None
+                }
+            raise
+            
+    def _wait_for_deletion(self, timeout: int = 1800) -> None:
+        """Wait for domain deletion to complete.
+        
+        Args:
+            timeout: Maximum wait time in seconds (default 30 minutes)
+            
+        Raises:
+            TimeoutError: If domain is not deleted within timeout
+        """
+        print("\nWaiting for domain deletion to complete...")
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                status = self.get_domain_status()
+                if not status['exists']:
+                    print("Domain deletion complete")
+                    return
+                print(f"Domain status: {status['stage']} (elapsed: {(time.time() - start) / 60:.1f} minutes)")
+                time.sleep(30)  # Check every 30 seconds
+            except ClientError as e:
+                if e.response['Error']['Code'] == 'ResourceNotFoundException':
+                    print("Domain deletion complete")
+                    return
+                raise
+                
+        raise TimeoutError(f"Domain deletion did not complete within {timeout/60:.1f} minutes")
             
     def create_domain(self) -> Dict:
         """Create a new OpenSearch domain with standard configuration."""
@@ -150,10 +192,15 @@ class OpenSearchManager:
             
             if not status['exists']:
                 print("Waiting for domain to be created...")
+            elif status['stage'] == 'Deleting':
+                print(f"Domain is being deleted (elapsed: {status['elapsed_minutes']:.1f} minutes)")
             elif not status['processing'] and status['endpoint']:
                 print(f"\nOpenSearch domain is now active after {status['elapsed_minutes']:.1f} minutes")
                 print(f"Stage: {status['stage']}")
                 print(f"Endpoint: {status['endpoint']}")
+                # Add extra wait for DNS propagation
+                print("Waiting for DNS propagation...")
+                time.sleep(60)
                 return status['endpoint']
             else:
                 print(f"Domain status: {status['stage']} (elapsed: {status['elapsed_minutes']:.1f} minutes)")
@@ -166,6 +213,23 @@ class OpenSearchManager:
             print(json.dumps(status['full_status'], indent=2, default=self._serialize_datetime))
             
         raise TimeoutError(f"OpenSearch domain did not become active after {max_attempts * delay / 60:.1f} minutes")
+        
+    def _create_and_wait(self) -> str:
+        """Create new domain and wait for it to be active.
+        
+        Returns:
+            str: Domain endpoint
+        """
+        print(f"\nCreating new domain: {self.domain_name}")
+        try:
+            self.create_domain()
+            print("\nWaiting for OpenSearch domain to be active (this may take 10-15 minutes)...")
+            return self.wait_for_domain()
+        except Exception as e:
+            print(f"\nError creating domain: {str(e)}")
+            if self.verbose:
+                print(f"Error type: {type(e)}")
+            raise
         
     def setup_domain(self) -> str:
         """Set up OpenSearch domain - either use existing or create new.
@@ -188,6 +252,12 @@ class OpenSearchManager:
                 print("Full domain status:")
                 print(json.dumps(status['full_status'], indent=2, default=self._serialize_datetime))
             
+            # Check if domain is being deleted
+            if status['stage'] == 'Deleting':
+                print("\nDomain is being deleted, waiting for deletion to complete...")
+                self._wait_for_deletion()
+                return self._create_and_wait()
+            
             if status['endpoint']:
                 print(f"\nDomain is active with endpoint: {status['endpoint']}")
                 return status['endpoint']
@@ -195,17 +265,7 @@ class OpenSearchManager:
             print("\nWaiting for domain to become active...")
             return self.wait_for_domain()
         else:
-            print(f"\nCreating new domain: {self.domain_name}")
-            try:
-                self.create_domain()
-                print("\nWaiting for OpenSearch domain to be active (this may take 10-15 minutes)...")
-                return self.wait_for_domain()
-                
-            except Exception as e:
-                print(f"\nError creating domain: {str(e)}")
-                if self.verbose:
-                    print(f"Error type: {type(e)}")
-                raise
+            return self._create_and_wait()
                 
     def cleanup(self):
         """Clean up OpenSearch domain if cleanup is enabled."""
@@ -221,10 +281,17 @@ class OpenSearchManager:
         print("Warning: This will delete the OpenSearch domain and all indexed data")
         
         try:
-            print(f"Deleting OpenSearch domain: {self.domain_name}")
-            self.client.delete_domain(DomainName=self.domain_name)
-            print("✅ Cleanup successful")
-            print("Note: Domain deletion may take 15-20 minutes to complete")
+            # Check if domain exists and is not already being deleted
+            status = self.get_domain_status()
+            if status['exists'] and status['stage'] != 'Deleting':
+                print(f"Deleting OpenSearch domain: {self.domain_name}")
+                self.client.delete_domain(DomainName=self.domain_name)
+                print("✅ Cleanup successful")
+                print("Note: Domain deletion may take 15-20 minutes to complete")
+            elif status['stage'] == 'Deleting':
+                print(f"Domain {self.domain_name} is already being deleted")
+            else:
+                print(f"Domain {self.domain_name} does not exist")
         except Exception as e:
             print(f"❌ Error during cleanup: {str(e)}")
             if self.verbose:
