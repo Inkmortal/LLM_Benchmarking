@@ -1,6 +1,7 @@
 """Vector storage using OpenSearch for graph RAG."""
 
 import json
+import hashlib
 from typing import Dict, Any, List, Optional, Literal
 from utils.aws.opensearch_utils import OpenSearchManager
 
@@ -33,10 +34,17 @@ class VectorStore:
         # Initialize OpenSearch
         self._init_vector_store()
     
+    def _get_domain_name(self) -> str:
+        """Generate a unique, shortened domain name."""
+        # Hash the index name
+        hash_obj = hashlib.md5(self.index_name.encode())
+        hash_str = hash_obj.hexdigest()[:8]  # Use first 8 chars of hash
+        return f"graph-rag-{hash_str}"
+    
     def _init_vector_store(self):
         """Initialize OpenSearch vector store connection."""
         self.opensearch = OpenSearchManager(
-            domain_name=f"graph-rag-{self.index_name}",
+            domain_name=self._get_domain_name(),
             cleanup_enabled=True
         )
         endpoint = self.opensearch.setup_domain()
