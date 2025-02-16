@@ -81,8 +81,11 @@ class NeptuneManager:
                             'MinCapacity': 1.0,
                             'MaxCapacity': 8.0
                         },
-                        IAMDatabaseAuthenticationEnabled=True,
-                        DeletionProtection=False
+                        EnableIAMDatabaseAuthentication=True,
+                        DeletionProtection=False,
+                        # Basic networking config
+                        Port=8182,
+                        DBClusterParameterGroupName='default.neptune1'
                     )
                     
                     cluster = response['DBCluster']
