@@ -49,6 +49,9 @@ class NeptuneManager:
         sts = boto3.client('sts')
         self.identity = sts.get_caller_identity()
         self.current_arn = self.identity['Arn']
+        
+        # Track resource state
+        self._resources_created = False
     
     def _log(self, message: str) -> None:
         """Print message if verbose mode is enabled."""
@@ -64,10 +67,21 @@ class NeptuneManager:
                 DBParameterGroupFamily='neptune1.2',
                 Description=f'Custom parameter group for {self.cluster_name}'
             )
+            self._resources_created = True
         except ClientError as e:
             if e.response['Error']['Code'] != 'DBParameterGroupAlreadyExists':
                 raise
             self._log(f"Using existing parameter group: {self.param_group_name}")
+    
+    def _wait_for_instance(self, instance_id: str) -> None:
+        """Wait for instance to be available."""
+        self._log("Waiting for instance to be available...")
+        waiter = self.neptune.get_waiter('db_instance_available')
+        waiter.wait(
+            DBInstanceIdentifier=instance_id,
+            WaiterConfig={'Delay': 30, 'MaxAttempts': 60}
+        )
+        self._log("Instance is available")
     
     def _ensure_instance(self) -> None:
         """Ensure cluster has at least one instance."""
@@ -89,16 +103,18 @@ class NeptuneManager:
             )
             
             # Wait for instance
-            self._log("Waiting for instance to be available...")
-            waiter = self.neptune.get_waiter('db_instance_available')
-            waiter.wait(
-                DBInstanceIdentifier=self.instance_id,
-                WaiterConfig={'Delay': 30, 'MaxAttempts': 60}
-            )
-            self._log("Instance is available")
+            self._wait_for_instance(self.instance_id)
+            self._resources_created = True
+            
         else:
-            self.instance_id = instances['DBInstances'][0]['DBInstanceIdentifier']
-            self._log(f"Using existing instance: {self.instance_id}")
+            instance = instances['DBInstances'][0]
+            self.instance_id = instance['DBInstanceIdentifier']
+            
+            # Only wait if instance not ready
+            if instance['DBInstanceStatus'] != 'available':
+                self._wait_for_instance(self.instance_id)
+            else:
+                self._log(f"Using existing instance: {self.instance_id}")
     
     def setup_cluster(self) -> str:
         """
@@ -159,15 +175,17 @@ class NeptuneManager:
                     self.endpoint = response['DBClusters'][0]['Endpoint']
                     
                     self._log(f"Neptune cluster created: {self.cluster_id}")
+                    self._resources_created = True
                 else:
                     raise
             
-            # Ensure instance exists
+            # Ensure instance exists and is ready
             self._ensure_instance()
             
-            # Wait for DNS propagation and endpoint readiness
-            self._log("Waiting for endpoint to be resolvable...")
-            time.sleep(60)  # Give more time for DNS and endpoint setup
+            # Only wait for DNS if we created new resources
+            if self._resources_created:
+                self._log("Waiting for endpoint to be resolvable...")
+                time.sleep(60)  # Give DNS time to propagate
             
             return self.endpoint
             
@@ -265,9 +283,9 @@ class NeptuneGraph:
         self.g = None
         
         # Set up connection with retries
-        self._init_connection()
+        self._connect_with_retries()
     
-    def _init_connection(self):
+    def _connect_with_retries(self):
         """Initialize connection with retries."""
         # Set up event loop
         self._loop = asyncio.new_event_loop()
@@ -299,16 +317,15 @@ class NeptuneGraph:
                     time.sleep(delay)
                     continue
                 
-                raise Exception(
+                raise ConnectionError(
                     f"Failed to connect to Neptune after {self.max_retries} attempts"
                 ) from last_error
     
     def _cleanup_session(self):
         """Clean up aiohttp session."""
-        if self._session:
-            if not self._session.closed:
-                self._loop.run_until_complete(self._session.close())
-            self._session = None
+        if self._session and not self._session.closed:
+            self._loop.run_until_complete(self._session.close())
+        self._session = None
     
     def close(self):
         """Close all connections."""

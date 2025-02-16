@@ -30,13 +30,15 @@ class GraphStore:
     
     def _init_graph_store(self):
         """Initialize Neptune graph store connection."""
+        # Set up Neptune cluster
+        self.neptune_manager = NeptuneManager(
+            cluster_name=self.cluster_name,
+            cleanup_enabled=False,  # Don't cleanup on init failure
+            verbose=self.enable_audit
+        )
+        
         try:
-            # Set up Neptune cluster
-            self.neptune_manager = NeptuneManager(
-                cluster_name=self.cluster_name,
-                cleanup_enabled=True,
-                verbose=self.enable_audit
-            )
+            # Get endpoint
             endpoint = self.neptune_manager.setup_cluster()
             
             # Initialize graph interface
@@ -46,8 +48,7 @@ class GraphStore:
             self._initialized = True
             
         except Exception as e:
-            # Clean up on initialization failure
-            self.cleanup()
+            # Don't trigger cleanup on initialization failure
             raise Exception(f"Failed to initialize graph store: {str(e)}") from e
     
     def ensure_initialized(self):
@@ -156,16 +157,20 @@ class GraphStore:
         """
         self.ensure_initialized()
         
-        entities = self.graph.get_neighbors(
-            vertex_id=doc_id,
-            direction="out",
-            edge_label="CONTAINS"
-        )
-        
-        if label:
-            entities = [e for e in entities if e["label"] == label]
+        try:
+            entities = self.graph.get_neighbors(
+                vertex_id=doc_id,
+                direction="out",
+                edge_label="CONTAINS"
+            )
             
-        return entities
+            if label:
+                entities = [e for e in entities if e["label"] == label]
+                
+            return entities
+            
+        except Exception as e:
+            raise Exception(f"Failed to get entities for document {doc_id}: {str(e)}") from e
     
     def get_document_relations(
         self,
@@ -181,9 +186,12 @@ class GraphStore:
         """
         self.ensure_initialized()
         
-        return self.graph.get_edges(
-            properties={"document": doc_id}
-        )
+        try:
+            return self.graph.get_edges(
+                properties={"document": doc_id}
+            )
+        except Exception as e:
+            raise Exception(f"Failed to get relations for document {doc_id}: {str(e)}") from e
     
     def get_entity_documents(
         self,
@@ -201,26 +209,34 @@ class GraphStore:
         """
         self.ensure_initialized()
         
-        # Find matching entity vertices
-        matches = self.graph.get_vertices(
-            properties={"text": entity_text}
-        )
-        
-        documents = []
-        for match in matches:
-            # Get connected documents
-            docs = self.graph.get_neighbors(
-                vertex_id=match["id"],
-                direction="in",
-                edge_label="CONTAINS",
-                limit=limit
+        try:
+            # Find matching entity vertices
+            matches = self.graph.get_vertices(
+                properties={"text": entity_text}
             )
-            documents.extend(docs)
-        
-        return documents[:limit] if limit else documents
+            
+            documents = []
+            for match in matches:
+                # Get connected documents
+                docs = self.graph.get_neighbors(
+                    vertex_id=match["id"],
+                    direction="in",
+                    edge_label="CONTAINS",
+                    limit=limit
+                )
+                documents.extend(docs)
+            
+            return documents[:limit] if limit else documents
+            
+        except Exception as e:
+            raise Exception(f"Failed to get documents for entity {entity_text}: {str(e)}") from e
     
-    def cleanup(self):
-        """Clean up all resources."""
+    def cleanup(self, delete_resources: bool = False):
+        """Clean up all resources.
+        
+        Args:
+            delete_resources: Whether to delete Neptune resources
+        """
         if self.graph:
             try:
                 self.graph.close()
@@ -230,6 +246,8 @@ class GraphStore:
             
         if self.neptune_manager:
             try:
+                # Only delete resources if explicitly requested
+                self.neptune_manager.cleanup_enabled = delete_resources
                 self.neptune_manager.cleanup()
             except:
                 pass  # Best effort cleanup
