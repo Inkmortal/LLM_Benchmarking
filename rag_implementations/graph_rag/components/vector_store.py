@@ -1,7 +1,10 @@
 """Vector storage using OpenSearch for graph RAG."""
 
+import os
+import boto3
 from typing import Dict, Any, List, Optional
-from opensearchpy import OpenSearch
+from opensearchpy import OpenSearch, RequestsHttpConnection
+from requests_aws4auth import AWS4Auth
 from utils.aws.opensearch_utils import OpenSearchManager
 
 class VectorStore:
@@ -38,24 +41,41 @@ class VectorStore:
         # Initialize OpenSearch
         self._init_vector_store()
     
+    def _get_domain_name(self) -> str:
+        """Get consistent domain name for benchmarking."""
+        return "rag-bench"  # Simple, consistent name for benchmark domain
+    
     def _init_vector_store(self):
         """Initialize OpenSearch vector store."""
         try:
-            # Set up OpenSearch domain
+            # Set up OpenSearch domain with consistent name
             self.opensearch_manager = OpenSearchManager(
-                domain_name=f"graph-rag-{self.index_name[:8]}",  # Use first 8 chars to avoid long names
+                domain_name=self._get_domain_name(),
                 cleanup_enabled=False,  # Never cleanup during init
                 verbose=True  # Always show progress for vector store
             )
             
-            # Get endpoint and create client
+            # Get endpoint
             endpoint = self.opensearch_manager.setup_domain()
+            
+            # Get AWS credentials for auth
+            credentials = boto3.Session().get_credentials()
+            region = boto3.Session().region_name
+            awsauth = AWS4Auth(
+                credentials.access_key,
+                credentials.secret_key,
+                region,
+                'es',
+                session_token=credentials.token
+            )
+            
+            # Initialize OpenSearch client with proper auth
             self.opensearch = OpenSearch(
                 hosts=[{'host': endpoint, 'port': 443}],
-                http_auth=None,  # Use IAM auth
+                http_auth=awsauth,
                 use_ssl=True,
                 verify_certs=True,
-                connection_class=None,  # Let client choose best
+                connection_class=RequestsHttpConnection,
                 timeout=60,
                 max_retries=10,
                 retry_on_timeout=True
@@ -78,7 +98,12 @@ class VectorStore:
         settings = {
             'index': {
                 'number_of_shards': 1,
-                'number_of_replicas': 0
+                'number_of_replicas': 0,
+                'knn': {
+                    'algo_param': {
+                        'ef_search': 512  # Higher values = more accurate but slower
+                    }
+                }
             }
         }
         
