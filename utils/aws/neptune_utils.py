@@ -6,8 +6,12 @@ import os
 import time
 import json
 import boto3
+import asyncio
+import aiohttp
 from typing import Dict, Any, Optional, List
 from botocore.exceptions import ClientError
+from gremlin_python.driver.driver_remote_connection import DriverRemoteConnection
+from gremlin_python.structure.graph import Graph
 
 class NeptuneManager:
     """
@@ -161,9 +165,9 @@ class NeptuneManager:
             # Ensure instance exists
             self._ensure_instance()
             
-            # Wait for DNS propagation
+            # Wait for DNS propagation and endpoint readiness
             self._log("Waiting for endpoint to be resolvable...")
-            time.sleep(30)  # Give DNS some time to propagate
+            time.sleep(60)  # Give more time for DNS and endpoint setup
             
             return self.endpoint
             
@@ -251,16 +255,33 @@ class NeptuneGraph:
             retry_delay: Initial delay between retries (doubles each attempt)
         """
         self.endpoint = endpoint
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
         
-        # Initialize Gremlin client with retries
-        from gremlin_python.driver.driver_remote_connection import DriverRemoteConnection
-        from gremlin_python.structure.graph import Graph
+        # Initialize connection state
+        self._session = None
+        self._loop = None
+        self.connection = None
+        self.g = None
+        
+        # Set up connection with retries
+        self._init_connection()
+    
+    def _init_connection(self):
+        """Initialize connection with retries."""
+        # Set up event loop
+        self._loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self._loop)
         
         last_error = None
-        for attempt in range(max_retries):
+        for attempt in range(self.max_retries):
             try:
+                # Create new session for each attempt
+                self._session = aiohttp.ClientSession()
+                
+                # Initialize Gremlin connection
                 self.connection = DriverRemoteConnection(
-                    f'wss://{endpoint}:8182/gremlin',
+                    f'wss://{self.endpoint}:8182/gremlin',
                     'g'
                 )
                 self.g = Graph().traversal().withRemote(self.connection)
@@ -271,17 +292,35 @@ class NeptuneGraph:
                 
             except Exception as e:
                 last_error = e
-                if attempt < max_retries - 1:
-                    time.sleep(retry_delay * (2 ** attempt))  # Exponential backoff
+                self._cleanup_session()
+                
+                if attempt < self.max_retries - 1:
+                    delay = min(60, self.retry_delay * (2 ** attempt))
+                    time.sleep(delay)
                     continue
+                
                 raise Exception(
-                    f"Failed to connect to Neptune after {max_retries} attempts"
+                    f"Failed to connect to Neptune after {self.max_retries} attempts"
                 ) from last_error
     
+    def _cleanup_session(self):
+        """Clean up aiohttp session."""
+        if self._session:
+            if not self._session.closed:
+                self._loop.run_until_complete(self._session.close())
+            self._session = None
+    
     def close(self):
-        """Close connection to Neptune."""
+        """Close all connections."""
         if self.connection:
             self.connection.close()
+            self.connection = None
+        
+        self._cleanup_session()
+        
+        if self._loop:
+            self._loop.close()
+            self._loop = None
     
     def add_vertex(
         self,
@@ -300,6 +339,9 @@ class NeptuneGraph:
         Returns:
             Vertex ID
         """
+        if not self.g:
+            raise RuntimeError("Graph connection not initialized")
+            
         if id:
             vertex = self.g.addV(label).property('id', id)
         else:
@@ -330,6 +372,9 @@ class NeptuneGraph:
         Returns:
             Edge ID
         """
+        if not self.g:
+            raise RuntimeError("Graph connection not initialized")
+            
         edge = self.g.V(from_id).addE(label).to(self.g.V(to_id))
         
         if properties:
@@ -356,6 +401,9 @@ class NeptuneGraph:
         Returns:
             List of vertex data
         """
+        if not self.g:
+            raise RuntimeError("Graph connection not initialized")
+            
         if label:
             query = self.g.V().hasLabel(label)
         else:
@@ -388,6 +436,9 @@ class NeptuneGraph:
         Returns:
             List of edge data
         """
+        if not self.g:
+            raise RuntimeError("Graph connection not initialized")
+            
         if label:
             query = self.g.E().hasLabel(label)
         else:
@@ -422,6 +473,9 @@ class NeptuneGraph:
         Returns:
             List of neighbor data
         """
+        if not self.g:
+            raise RuntimeError("Graph connection not initialized")
+            
         if direction == 'in':
             query = self.g.V(vertex_id).in_()
         elif direction == 'out':

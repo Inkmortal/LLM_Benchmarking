@@ -20,21 +20,42 @@ class GraphStore:
         self.cluster_name = cluster_name
         self.enable_audit = enable_audit
         
+        # Track component state
+        self._initialized = False
+        self.neptune_manager = None
+        self.graph = None
+        
         # Initialize Neptune
         self._init_graph_store()
     
     def _init_graph_store(self):
         """Initialize Neptune graph store connection."""
-        # Set up Neptune cluster
-        self.neptune_manager = NeptuneManager(
-            cluster_name=self.cluster_name,
-            cleanup_enabled=True,
-            verbose=self.enable_audit
-        )
-        endpoint = self.neptune_manager.setup_cluster()
-        
-        # Initialize graph interface
-        self.graph = NeptuneGraph(endpoint)
+        try:
+            # Set up Neptune cluster
+            self.neptune_manager = NeptuneManager(
+                cluster_name=self.cluster_name,
+                cleanup_enabled=True,
+                verbose=self.enable_audit
+            )
+            endpoint = self.neptune_manager.setup_cluster()
+            
+            # Initialize graph interface
+            self.graph = NeptuneGraph(endpoint)
+            
+            # Mark as initialized
+            self._initialized = True
+            
+        except Exception as e:
+            # Clean up on initialization failure
+            self.cleanup()
+            raise Exception(f"Failed to initialize graph store: {str(e)}") from e
+    
+    def ensure_initialized(self):
+        """Ensure graph store is properly initialized."""
+        if not self._initialized:
+            raise RuntimeError("GraphStore not properly initialized")
+        if not self.graph:
+            raise RuntimeError("Graph connection not available")
     
     def store_document(
         self,
@@ -51,67 +72,73 @@ class GraphStore:
             metadata: Document metadata
             graph_data: Extracted entities and relations
         """
-        # Create document vertex
-        doc_vertex_id = self.graph.add_vertex(
-            label="Document",
-            properties={
-                "id": doc_id,
-                "content": content,
-                **metadata
-            },
-            id=doc_id
-        )
+        self.ensure_initialized()
         
-        # Add entities
-        entity_ids = {}
-        for entity in graph_data["entities"]:
-            # Create unique ID for entity
-            entity_id = f"{entity['text']}_{entity['label']}"
-            
-            # Add entity vertex if it doesn't exist
-            if entity_id not in entity_ids:
-                entity_ids[entity_id] = self.graph.add_vertex(
-                    label=entity["label"],
-                    properties={
-                        "text": entity["text"],
-                        "label": entity["label"],
-                        "frequency": entity["frequency"]
-                    },
-                    id=entity_id
-                )
-            
-            # Link entity to document
-            self.graph.add_edge(
-                from_id=doc_vertex_id,
-                to_id=entity_ids[entity_id],
-                label="CONTAINS",
+        try:
+            # Create document vertex
+            doc_vertex_id = self.graph.add_vertex(
+                label="Document",
                 properties={
-                    "start": entity["start"],
-                    "end": entity["end"]
-                }
+                    "id": doc_id,
+                    "content": content,
+                    **metadata
+                },
+                id=doc_id
             )
-        
-        # Add relations
-        for relation in graph_data["relations"]:
-            if relation["object"]:
-                # Create relation edge between entities
-                subject_matches = self.graph.get_vertices(
-                    properties={"text": relation["subject"]}
-                )
-                object_matches = self.graph.get_vertices(
-                    properties={"text": relation["object"]}
-                )
+            
+            # Add entities
+            entity_ids = {}
+            for entity in graph_data["entities"]:
+                # Create unique ID for entity
+                entity_id = f"{entity['text']}_{entity['label']}"
                 
-                if subject_matches and object_matches:
-                    self.graph.add_edge(
-                        from_id=subject_matches[0]["id"],
-                        to_id=object_matches[0]["id"],
-                        label=relation["predicate"].upper(),
+                # Add entity vertex if it doesn't exist
+                if entity_id not in entity_ids:
+                    entity_ids[entity_id] = self.graph.add_vertex(
+                        label=entity["label"],
                         properties={
-                            "document": doc_id,
-                            "distance": relation["distance"]
-                        }
+                            "text": entity["text"],
+                            "label": entity["label"],
+                            "frequency": entity["frequency"]
+                        },
+                        id=entity_id
                     )
+                
+                # Link entity to document
+                self.graph.add_edge(
+                    from_id=doc_vertex_id,
+                    to_id=entity_ids[entity_id],
+                    label="CONTAINS",
+                    properties={
+                        "start": entity["start"],
+                        "end": entity["end"]
+                    }
+                )
+            
+            # Add relations
+            for relation in graph_data["relations"]:
+                if relation["object"]:
+                    # Create relation edge between entities
+                    subject_matches = self.graph.get_vertices(
+                        properties={"text": relation["subject"]}
+                    )
+                    object_matches = self.graph.get_vertices(
+                        properties={"text": relation["object"]}
+                    )
+                    
+                    if subject_matches and object_matches:
+                        self.graph.add_edge(
+                            from_id=subject_matches[0]["id"],
+                            to_id=object_matches[0]["id"],
+                            label=relation["predicate"].upper(),
+                            properties={
+                                "document": doc_id,
+                                "distance": relation["distance"]
+                            }
+                        )
+                        
+        except Exception as e:
+            raise Exception(f"Failed to store document {doc_id}: {str(e)}") from e
     
     def get_document_entities(
         self,
@@ -127,6 +154,8 @@ class GraphStore:
         Returns:
             List of entity data
         """
+        self.ensure_initialized()
+        
         entities = self.graph.get_neighbors(
             vertex_id=doc_id,
             direction="out",
@@ -150,6 +179,8 @@ class GraphStore:
         Returns:
             List of relation data
         """
+        self.ensure_initialized()
+        
         return self.graph.get_edges(
             properties={"document": doc_id}
         )
@@ -168,6 +199,8 @@ class GraphStore:
         Returns:
             List of document data
         """
+        self.ensure_initialized()
+        
         # Find matching entity vertices
         matches = self.graph.get_vertices(
             properties={"text": entity_text}
@@ -187,6 +220,19 @@ class GraphStore:
         return documents[:limit] if limit else documents
     
     def cleanup(self):
-        """Clean up Neptune resources."""
+        """Clean up all resources."""
+        if self.graph:
+            try:
+                self.graph.close()
+            except:
+                pass  # Best effort cleanup
+            self.graph = None
+            
         if self.neptune_manager:
-            self.neptune_manager.cleanup()
+            try:
+                self.neptune_manager.cleanup()
+            except:
+                pass  # Best effort cleanup
+            self.neptune_manager = None
+            
+        self._initialized = False
