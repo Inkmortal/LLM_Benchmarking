@@ -73,15 +73,65 @@ class NeptuneManager:
                 raise
             self._log(f"Using existing parameter group: {self.param_group_name}")
     
-    def _wait_for_instance(self, instance_id: str) -> None:
-        """Wait for instance to be available."""
+    def _wait_for_cluster(self, cluster_id: str, timeout: int = 1800) -> None:
+        """Wait for cluster to be available using polling.
+        
+        Args:
+            cluster_id: Cluster identifier
+            timeout: Maximum wait time in seconds (default 30 minutes)
+        """
+        self._log("Waiting for cluster to be available...")
+        start_time = time.time()
+        while True:
+            try:
+                response = self.neptune.describe_db_clusters(
+                    DBClusterIdentifier=cluster_id
+                )
+                status = response['DBClusters'][0]['Status']
+                if status == 'available':
+                    self._log("Cluster is available")
+                    return
+                elif status == 'failed':
+                    raise Exception(f"Cluster creation failed: {cluster_id}")
+                elif time.time() - start_time > timeout:
+                    raise Exception(f"Timeout waiting for cluster: {cluster_id}")
+                else:
+                    self._log(f"Cluster status: {status}")
+                    time.sleep(30)
+            except ClientError as e:
+                if e.response['Error']['Code'] == 'DBClusterNotFoundFault':
+                    raise Exception(f"Cluster not found: {cluster_id}")
+                raise
+    
+    def _wait_for_instance(self, instance_id: str, timeout: int = 1800) -> None:
+        """Wait for instance to be available using polling.
+        
+        Args:
+            instance_id: Instance identifier
+            timeout: Maximum wait time in seconds (default 30 minutes)
+        """
         self._log("Waiting for instance to be available...")
-        waiter = self.neptune.get_waiter('db_instance_available')
-        waiter.wait(
-            DBInstanceIdentifier=instance_id,
-            WaiterConfig={'Delay': 30, 'MaxAttempts': 60}
-        )
-        self._log("Instance is available")
+        start_time = time.time()
+        while True:
+            try:
+                response = self.neptune.describe_db_instances(
+                    DBInstanceIdentifier=instance_id
+                )
+                status = response['DBInstances'][0]['DBInstanceStatus']
+                if status == 'available':
+                    self._log("Instance is available")
+                    return
+                elif status == 'failed':
+                    raise Exception(f"Instance creation failed: {instance_id}")
+                elif time.time() - start_time > timeout:
+                    raise Exception(f"Timeout waiting for instance: {instance_id}")
+                else:
+                    self._log(f"Instance status: {status}")
+                    time.sleep(30)
+            except ClientError as e:
+                if e.response['Error']['Code'] == 'DBInstanceNotFound':
+                    raise Exception(f"Instance not found: {instance_id}")
+                raise
     
     def _ensure_instance(self) -> None:
         """Ensure cluster has at least one instance."""
@@ -161,12 +211,7 @@ class NeptuneManager:
                     self.cluster_id = cluster['DBClusterIdentifier']
                     
                     # Wait for cluster to be available
-                    self._log("Waiting for cluster to be available...")
-                    waiter = self.neptune.get_waiter('db_cluster_available')
-                    waiter.wait(
-                        DBClusterIdentifier=self.cluster_id,
-                        WaiterConfig={'Delay': 30, 'MaxAttempts': 60}
-                    )
+                    self._wait_for_cluster(self.cluster_id)
                     
                     # Get endpoint
                     response = self.neptune.describe_db_clusters(
@@ -208,12 +253,20 @@ class NeptuneManager:
                     )
                     
                     # Wait for instance deletion
-                    self._log("Waiting for instance to be deleted...")
-                    waiter = self.neptune.get_waiter('db_instance_deleted')
-                    waiter.wait(
-                        DBInstanceIdentifier=self.instance_id,
-                        WaiterConfig={'Delay': 30, 'MaxAttempts': 60}
-                    )
+                    start_time = time.time()
+                    while True:
+                        try:
+                            self.neptune.describe_db_instances(
+                                DBInstanceIdentifier=self.instance_id
+                            )
+                            if time.time() - start_time > 1800:  # 30 minutes
+                                raise Exception(f"Timeout waiting for instance deletion: {self.instance_id}")
+                            time.sleep(30)
+                        except ClientError as e:
+                            if e.response['Error']['Code'] == 'DBInstanceNotFound':
+                                break
+                            raise
+                        
                 except ClientError as e:
                     if e.response['Error']['Code'] != 'DBInstanceNotFound':
                         raise
@@ -227,12 +280,20 @@ class NeptuneManager:
                     )
                     
                     # Wait for cluster deletion
-                    self._log("Waiting for cluster to be deleted...")
-                    waiter = self.neptune.get_waiter('db_cluster_deleted')
-                    waiter.wait(
-                        DBClusterIdentifier=self.cluster_id,
-                        WaiterConfig={'Delay': 30, 'MaxAttempts': 60}
-                    )
+                    start_time = time.time()
+                    while True:
+                        try:
+                            self.neptune.describe_db_clusters(
+                                DBClusterIdentifier=self.cluster_id
+                            )
+                            if time.time() - start_time > 1800:  # 30 minutes
+                                raise Exception(f"Timeout waiting for cluster deletion: {self.cluster_id}")
+                            time.sleep(30)
+                        except ClientError as e:
+                            if e.response['Error']['Code'] == 'DBClusterNotFoundFault':
+                                break
+                            raise
+                        
                 except ClientError as e:
                     if e.response['Error']['Code'] != 'DBClusterNotFoundFault':
                         raise

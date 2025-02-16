@@ -33,7 +33,7 @@ class GraphStore:
         # Set up Neptune cluster
         self.neptune_manager = NeptuneManager(
             cluster_name=self.cluster_name,
-            cleanup_enabled=False,  # Don't cleanup on init failure
+            cleanup_enabled=False,  # Never cleanup during init
             verbose=self.enable_audit
         )
         
@@ -41,14 +41,30 @@ class GraphStore:
             # Get endpoint
             endpoint = self.neptune_manager.setup_cluster()
             
-            # Initialize graph interface
-            self.graph = NeptuneGraph(endpoint)
+            # Initialize graph interface with longer retries
+            self.graph = NeptuneGraph(
+                endpoint=endpoint,
+                max_retries=10,  # More retries for initial connection
+                retry_delay=5.0   # Start with longer delay
+            )
             
             # Mark as initialized
             self._initialized = True
             
         except Exception as e:
             # Don't trigger cleanup on initialization failure
+            # Just clean up any partial state
+            if self.graph:
+                try:
+                    self.graph.close()
+                except:
+                    pass
+                self.graph = None
+                
+            if self.neptune_manager:
+                self.neptune_manager.cleanup_enabled = False
+                self.neptune_manager = None
+                
             raise Exception(f"Failed to initialize graph store: {str(e)}") from e
     
     def ensure_initialized(self):
