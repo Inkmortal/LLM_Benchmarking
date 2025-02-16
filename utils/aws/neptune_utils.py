@@ -38,6 +38,7 @@ class NeptuneManager:
         # Track created resources
         self.cluster_id = None
         self.endpoint = None
+        self.param_group_name = f"{cluster_name}-params"
         
         # Get identity for IAM auth
         sts = boto3.client('sts')
@@ -48,6 +49,20 @@ class NeptuneManager:
         """Print message if verbose mode is enabled."""
         if self.verbose:
             print(message)
+    
+    def _create_parameter_group(self) -> None:
+        """Create a custom DB cluster parameter group."""
+        try:
+            self._log(f"Creating parameter group: {self.param_group_name}")
+            self.neptune.create_db_cluster_parameter_group(
+                DBClusterParameterGroupName=self.param_group_name,
+                DBParameterGroupFamily='neptune1.2',
+                Description=f'Custom parameter group for {self.cluster_name}'
+            )
+        except ClientError as e:
+            if e.response['Error']['Code'] != 'DBParameterGroupAlreadyExists':
+                raise
+            self._log(f"Using existing parameter group: {self.param_group_name}")
     
     def setup_cluster(self) -> str:
         """
@@ -69,6 +84,9 @@ class NeptuneManager:
                 
             except ClientError as e:
                 if e.response['Error']['Code'] == 'DBClusterNotFoundFault':
+                    # Create parameter group first
+                    self._create_parameter_group()
+                    
                     # Create new cluster
                     self._log(f"Creating Neptune cluster: {self.cluster_name}")
                     
@@ -83,9 +101,8 @@ class NeptuneManager:
                         },
                         EnableIAMDatabaseAuthentication=True,
                         DeletionProtection=False,
-                        # Basic networking config
                         Port=8182,
-                        DBClusterParameterGroupName='default.neptune1'
+                        DBClusterParameterGroupName=self.param_group_name
                     )
                     
                     cluster = response['DBCluster']
@@ -138,6 +155,16 @@ class NeptuneManager:
                     DBClusterIdentifier=self.cluster_id,
                     WaiterConfig={'Delay': 30, 'MaxAttempts': 60}
                 )
+                
+                # Delete parameter group
+                try:
+                    self._log(f"Deleting parameter group: {self.param_group_name}")
+                    self.neptune.delete_db_cluster_parameter_group(
+                        DBClusterParameterGroupName=self.param_group_name
+                    )
+                except ClientError as e:
+                    if e.response['Error']['Code'] != 'DBParameterGroupNotFound':
+                        raise
                 
                 self._log("Cleanup complete")
                 
