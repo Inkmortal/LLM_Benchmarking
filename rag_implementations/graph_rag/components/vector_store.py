@@ -48,49 +48,70 @@ class VectorStore:
     def _init_vector_store(self):
         """Initialize OpenSearch vector store."""
         try:
-            # Set up OpenSearch domain with consistent name
+            # First check if domain exists and get endpoint
+            client = boto3.client('opensearch')
+            domain_name = self._get_domain_name()
+            
+            try:
+                # Try to get existing domain
+                response = client.describe_domain(DomainName=domain_name)
+                if 'DomainStatus' in response:
+                    status = response['DomainStatus']
+                    if 'Endpoints' in status:
+                        endpoint = status['Endpoints'].get('vpc') or status['Endpoint']
+                        if endpoint:
+                            print(f"Using existing OpenSearch domain: {domain_name}")
+                            self._setup_client(endpoint)
+                            return
+            except client.exceptions.ResourceNotFoundException:
+                pass
+            
+            # Domain doesn't exist or isn't ready, create/wait for it
             self.opensearch_manager = OpenSearchManager(
-                domain_name=self._get_domain_name(),
+                domain_name=domain_name,
                 cleanup_enabled=False,  # Never cleanup during init
                 verbose=True  # Always show progress for vector store
             )
             
             # Get endpoint
             endpoint = self.opensearch_manager.setup_domain()
-            
-            # Get AWS credentials for auth
-            credentials = boto3.Session().get_credentials()
-            region = boto3.Session().region_name
-            awsauth = AWS4Auth(
-                credentials.access_key,
-                credentials.secret_key,
-                region,
-                'es',
-                session_token=credentials.token
-            )
-            
-            # Initialize OpenSearch client with proper auth
-            self.opensearch = OpenSearch(
-                hosts=[{'host': endpoint, 'port': 443}],
-                http_auth=awsauth,
-                use_ssl=True,
-                verify_certs=True,
-                connection_class=RequestsHttpConnection,
-                timeout=60,
-                max_retries=10,
-                retry_on_timeout=True
-            )
-            
-            # Create index if it doesn't exist
-            if not self.opensearch.indices.exists(index=self.index_name):
-                self._create_index()
-            
-            self._initialized = True
+            self._setup_client(endpoint)
             
         except Exception as e:
             # Clean up on initialization failure
             self.cleanup(delete_resources=False)
             raise Exception(f"Failed to initialize vector store: {str(e)}") from e
+    
+    def _setup_client(self, endpoint: str):
+        """Set up OpenSearch client with endpoint."""
+        # Get AWS credentials for auth
+        credentials = boto3.Session().get_credentials()
+        region = boto3.Session().region_name
+        awsauth = AWS4Auth(
+            credentials.access_key,
+            credentials.secret_key,
+            region,
+            'es',
+            session_token=credentials.token
+        )
+        
+        # Initialize OpenSearch client with proper auth
+        self.opensearch = OpenSearch(
+            hosts=[{'host': endpoint, 'port': 443}],
+            http_auth=awsauth,
+            use_ssl=True,
+            verify_certs=True,
+            connection_class=RequestsHttpConnection,
+            timeout=60,
+            max_retries=10,
+            retry_on_timeout=True
+        )
+        
+        # Create index if it doesn't exist
+        if not self.opensearch.indices.exists(index=self.index_name):
+            self._create_index()
+        
+        self._initialized = True
     
     def _create_index(self):
         """Create OpenSearch index with vector mapping."""
