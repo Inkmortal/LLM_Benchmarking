@@ -8,6 +8,7 @@ import sys
 import socket
 import subprocess
 import pkg_resources
+import json
 
 def install_requirements():
     """Install required packages."""
@@ -59,7 +60,71 @@ def get_instance_identity():
     except:
         return None
 
-def check_security_groups(cluster_name: str) -> bool:
+def get_current_ip():
+    """Get current public IP address."""
+    try:
+        response = requests.get('https://checkip.amazonaws.com', timeout=5)
+        return response.text.strip()
+    except:
+        return None
+
+def update_security_group(sg_id: str, current_ip: str = None) -> bool:
+    """Update security group to allow access."""
+    print(f"\nUpdating security group {sg_id}...")
+    
+    try:
+        ec2 = boto3.client('ec2')
+        
+        # Get current security group rules
+        sg = ec2.describe_security_groups(GroupIds=[sg_id])['SecurityGroups'][0]
+        
+        # Check if rule already exists
+        for rule in sg.get('IpPermissions', []):
+            if rule.get('FromPort', 0) <= 8182 <= rule.get('ToPort', 0):
+                for ip_range in rule.get('IpRanges', []):
+                    if current_ip and ip_range['CidrIp'] == f"{current_ip}/32":
+                        print(f"Rule already exists for {current_ip}/32")
+                        return True
+        
+        # Create new rule
+        new_rule = {
+            'FromPort': 8182,
+            'ToPort': 8182,
+            'IpProtocol': 'tcp',
+            'IpRanges': []
+        }
+        
+        if current_ip:
+            # Add specific IP
+            new_rule['IpRanges'].append({
+                'CidrIp': f"{current_ip}/32",
+                'Description': 'Neptune access'
+            })
+        else:
+            # If no specific IP, allow VPC CIDR
+            vpc_id = sg['VpcId']
+            vpc = ec2.describe_vpcs(VpcIds=[vpc_id])['Vpcs'][0]
+            vpc_cidr = vpc['CidrBlock']
+            new_rule['IpRanges'].append({
+                'CidrIp': vpc_cidr,
+                'Description': 'VPC access'
+            })
+        
+        # Add the rule
+        print(f"Adding rule: {json.dumps(new_rule, indent=2)}")
+        ec2.authorize_security_group_ingress(
+            GroupId=sg_id,
+            IpPermissions=[new_rule]
+        )
+        
+        print("Security group updated successfully")
+        return True
+        
+    except Exception as e:
+        print(f"Error updating security group: {str(e)}")
+        return False
+
+def check_security_groups(cluster_name: str, auto_update: bool = True) -> bool:
     """Check Neptune security group settings."""
     print("\nChecking Neptune security group settings...")
     
@@ -91,7 +156,12 @@ def check_security_groups(cluster_name: str) -> bool:
             for sg in instance_security_groups:
                 print(f"- {sg['GroupName']} ({sg['GroupId']})")
         else:
-            print("\nNot running on EC2 - skipping instance security group check")
+            print("\nNot running on EC2 - will use public IP for access")
+            current_ip = get_current_ip()
+            if current_ip:
+                print(f"Current public IP: {current_ip}")
+            else:
+                print("Could not determine public IP")
         
         has_access = False
         for vpc_sg in vpc_security_groups:
@@ -108,9 +178,11 @@ def check_security_groups(cluster_name: str) -> bool:
                 if rule.get('FromPort', 0) <= 8182 <= rule.get('ToPort', 0):
                     for ip_range in rule.get('IpRanges', []):
                         print(f"- {ip_range['CidrIp']} (TCP {rule['FromPort']}-{rule['ToPort']})")
-                        # If we're not on EC2, any CIDR that allows 8182 is good enough
+                        # If we're not on EC2, check if our IP is allowed
                         if not instance_info:
-                            has_access = True
+                            current_ip = get_current_ip()
+                            if current_ip and ip_range['CidrIp'] in [f"{current_ip}/32", "0.0.0.0/0"]:
+                                has_access = True
                     for group in rule.get('UserIdGroupPairs', []):
                         print(f"- Security Group: {group['GroupId']}")
                         # Check if our instance's security group is allowed
@@ -118,6 +190,20 @@ def check_security_groups(cluster_name: str) -> bool:
                                                for isg in instance_security_groups):
                             has_access = True
                             print("  (Current instance's security group)")
+            
+            if not has_access and auto_update:
+                print("\nNo valid access rules found - attempting to add...")
+                if instance_info:
+                    # Add instance's security group
+                    for isg in instance_security_groups:
+                        if update_security_group(sg_id):
+                            has_access = True
+                            break
+                else:
+                    # Add current IP
+                    current_ip = get_current_ip()
+                    if current_ip and update_security_group(sg_id, current_ip):
+                        has_access = True
             
         if not has_access:
             print("\nWarning: No valid inbound rules found for port 8182!")
@@ -179,7 +265,7 @@ def test_connection():
     print(f"Database URL: {database_url}")
     
     # Check security groups first
-    if not check_security_groups(CLUSTER_NAME):
+    if not check_security_groups(CLUSTER_NAME, auto_update=True):
         print("\nSecurity group check failed!")
         return False
     
