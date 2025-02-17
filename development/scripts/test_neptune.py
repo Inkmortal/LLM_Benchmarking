@@ -65,16 +65,11 @@ def test_connection():
         for k, v in request.headers.items():
             print(f"  {k}: {v}")
             
-        # Convert headers to list of tuples
-        headers = []
-        for k, v in request.headers.items():
-            if isinstance(v, (str, bytes)):
-                headers.append((str(k), str(v)))
-            else:
-                print(f"Skipping header {k} with non-string value: {type(v)}")
+        # Keep headers as a dictionary
+        headers = dict(request.headers)
         
         print("\nHeaders after conversion:")
-        for k, v in headers:
+        for k, v in headers.items():
             print(f"  {k}: {v}")
         
         # Initialize connection
