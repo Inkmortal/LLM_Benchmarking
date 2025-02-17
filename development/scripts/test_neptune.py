@@ -57,18 +57,15 @@ def test_connection():
         
         # Set up request with IAM auth
         print("Setting up IAM auth...")
-        request = AWSRequest(method="GET", url=database_url)
+        request = AWSRequest(method="GET", url=database_url, data=None)  # Added data=None
         SigV4Auth(creds, "neptune-db", boto3.Session().region_name).add_auth(request)
-        
-        # Convert headers to list of tuples
-        headers = [(k, v) for k, v in request.headers.items()]
         
         # Initialize connection
         print("Initializing connection...")
         remoteConn = DriverRemoteConnection(
             database_url,
             'g',
-            headers=headers
+            headers=list(request.headers.items())  # Convert to list explicitly
         )
         
         # Create traversal source
