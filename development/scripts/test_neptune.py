@@ -5,6 +5,29 @@ Simple script to test Neptune connection.
 
 import os
 import sys
+import subprocess
+import pkg_resources
+
+def install_requirements():
+    """Install required packages."""
+    requirements = {
+        'gremlinpython': '3.4.10',  # Version compatible with Neptune
+        'boto3': None,  # Latest version
+    }
+    
+    for package, version in requirements.items():
+        try:
+            pkg_resources.require(f"{package}=={version}" if version else package)
+        except (pkg_resources.DistributionNotFound, pkg_resources.VersionConflict):
+            print(f"Installing {package}...")
+            spec = f"{package}=={version}" if version else package
+            subprocess.check_call([sys.executable, "-m", "pip", "install", spec])
+
+# Install dependencies
+print("Checking dependencies...")
+install_requirements()
+
+# Now import required packages
 import boto3
 import logging
 from botocore.auth import SigV4Auth
@@ -42,7 +65,8 @@ def test_connection():
             database_url,
             'g',
             headers=request.headers.items(),
-            message_timeout=5000  # 5 seconds
+            message_timeout=5000,  # 5 seconds
+            pool_size=1  # Use single connection
         )
         
         # Create traversal source
@@ -53,6 +77,11 @@ def test_connection():
         print("\nTesting query...")
         result = g.inject(1).toList()
         print(f"Query result: {result}")
+        
+        # Try a real graph query
+        print("\nTesting graph query...")
+        vertices = g.V().limit(1).toList()
+        print(f"Found vertices: {vertices}")
         
         print("\nConnection test successful!")
         return True
