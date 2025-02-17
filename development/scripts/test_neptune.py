@@ -64,9 +64,7 @@ def test_connection():
         remoteConn = DriverRemoteConnection(
             database_url,
             'g',
-            headers=request.headers.items(),
-            message_timeout=5000,  # 5 seconds
-            pool_size=1  # Use single connection
+            headers=request.headers.items()
         )
         
         # Create traversal source
