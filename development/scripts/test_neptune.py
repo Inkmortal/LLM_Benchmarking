@@ -68,53 +68,60 @@ def get_current_ip():
     except:
         return None
 
-def update_security_group(sg_id: str, current_ip: str = None) -> bool:
-    """Update security group to allow access."""
-    print(f"\nUpdating security group {sg_id}...")
+def update_cluster_security_group(cluster_name: str, current_ip: str = None) -> bool:
+    """Update Neptune cluster security group to allow access."""
+    print(f"\nUpdating Neptune cluster {cluster_name} security group...")
     
     try:
+        neptune = boto3.client('neptune')
+        
+        # Get cluster info
+        clusters = neptune.describe_db_clusters(
+            DBClusterIdentifier=cluster_name
+        )
+        
+        if not clusters['DBClusters']:
+            print(f"Cluster {cluster_name} not found!")
+            return False
+            
+        cluster = clusters['DBClusters'][0]
+        
+        # Create new security group
+        print("Creating new security group...")
         ec2 = boto3.client('ec2')
+        vpc_id = cluster['VpcSecurityGroups'][0]['VpcId']
         
-        # Get current security group rules
-        sg = ec2.describe_security_groups(GroupIds=[sg_id])['SecurityGroups'][0]
+        response = ec2.create_security_group(
+            GroupName=f"neptune-access-{cluster_name}",
+            Description=f"Security group for Neptune cluster {cluster_name}",
+            VpcId=vpc_id
+        )
+        new_sg_id = response['GroupId']
         
-        # Check if rule already exists
-        for rule in sg.get('IpPermissions', []):
-            if rule.get('FromPort', 0) <= 8182 <= rule.get('ToPort', 0):
-                for ip_range in rule.get('IpRanges', []):
-                    if current_ip and ip_range['CidrIp'] == f"{current_ip}/32":
-                        print(f"Rule already exists for {current_ip}/32")
-                        return True
-        
-        # Create new rule
-        new_rule = {
-            'FromPort': 8182,
-            'ToPort': 8182,
-            'IpProtocol': 'tcp',
-            'IpRanges': []
-        }
-        
+        # Add inbound rule
         if current_ip:
-            # Add specific IP
-            new_rule['IpRanges'].append({
-                'CidrIp': f"{current_ip}/32",
-                'Description': 'Neptune access'
-            })
-        else:
-            # If no specific IP, allow VPC CIDR
-            vpc_id = sg['VpcId']
-            vpc = ec2.describe_vpcs(VpcIds=[vpc_id])['Vpcs'][0]
-            vpc_cidr = vpc['CidrBlock']
-            new_rule['IpRanges'].append({
-                'CidrIp': vpc_cidr,
-                'Description': 'VPC access'
-            })
+            print(f"Adding rule for IP {current_ip}...")
+            ec2.authorize_security_group_ingress(
+                GroupId=new_sg_id,
+                IpPermissions=[{
+                    'FromPort': 8182,
+                    'ToPort': 8182,
+                    'IpProtocol': 'tcp',
+                    'IpRanges': [{
+                        'CidrIp': f"{current_ip}/32",
+                        'Description': 'Neptune access'
+                    }]
+                }]
+            )
         
-        # Add the rule
-        print(f"Adding rule: {json.dumps(new_rule, indent=2)}")
-        ec2.authorize_security_group_ingress(
-            GroupId=sg_id,
-            IpPermissions=[new_rule]
+        # Add new security group to cluster
+        print("Adding security group to cluster...")
+        vpc_security_group_ids = [sg['VpcSecurityGroupId'] for sg in cluster['VpcSecurityGroups']]
+        vpc_security_group_ids.append(new_sg_id)
+        
+        neptune.modify_db_cluster(
+            DBClusterIdentifier=cluster_name,
+            VpcSecurityGroupIds=vpc_security_group_ids
         )
         
         print("Security group updated successfully")
@@ -135,7 +142,7 @@ def check_security_groups(cluster_name: str, auto_update: bool = True) -> bool:
         
         # Get cluster info
         clusters = neptune.describe_db_clusters(
-            Filters=[{'Name': 'db-cluster-id', 'Values': [cluster_name]}]
+            DBClusterIdentifier=cluster_name
         )
         
         if not clusters['DBClusters']:
@@ -193,16 +200,10 @@ def check_security_groups(cluster_name: str, auto_update: bool = True) -> bool:
             
             if not has_access and auto_update:
                 print("\nNo valid access rules found - attempting to add...")
-                if instance_info:
-                    # Add instance's security group
-                    for isg in instance_security_groups:
-                        if update_security_group(sg_id):
-                            has_access = True
-                            break
-                else:
+                if not instance_info:
                     # Add current IP
                     current_ip = get_current_ip()
-                    if current_ip and update_security_group(sg_id, current_ip):
+                    if current_ip and update_cluster_security_group(cluster_name, current_ip):
                         has_access = True
             
         if not has_access:
