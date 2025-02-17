@@ -1,100 +1,144 @@
 # Memory Registry
 
-## Core Files
+## Core Documentation
 
-### 1. projectbrief.md
-- Project goals and requirements
-- Core functionality
-- Success criteria
-- Last updated: Initial setup
+### Active Files
+1. `activeContext.md`
+   - Last Updated: 2025-02-16
+   - Focus: AWS Service Connectivity
+   - Key Topics:
+     - OpenSearch connection fixes
+     - Neptune connection issues
+     - Resource management
+     - Next steps
 
-### 2. productContext.md
-- RAG system overview
-- Use cases and requirements
-- Integration points
-- Last updated: Initial setup
+2. `progress.md`
+   - Last Updated: 2025-02-16
+   - Status: Current
+   - Tracks:
+     - Completed OpenSearch fixes
+     - Ongoing Neptune issues
+     - Known issues
+     - Future work
 
-### 3. systemPatterns.md
-- Component-based architecture
-- Directory structure
-- Implementation patterns
-- Last updated: 2/15/2025 (Added component organization patterns)
+3. `systemPatterns.md`
+   - Last Updated: 2025-02-16
+   - Content: AWS Service Patterns
+   - Key Sections:
+     - Domain management
+     - Authentication
+     - Connection handling
+     - Error recovery
 
-### 4. techContext.md
-- Technology stack details
-- AWS service configuration
-- Development environment
-- Last updated: Initial setup
-
-### 5. activeContext.md
-- Graph RAG refactoring
-- Component modularization
-- Metrics improvements
-- Last updated: 2/15/2025 (Updated with recent changes)
-
-### 6. progress.md
-- Implementation status
-- Known issues
-- Next steps
-- Last updated: 2/15/2025 (Added component work)
+### Dependencies
+```mermaid
+flowchart TD
+    SP[systemPatterns.md] --> AC[activeContext.md]
+    AC --> PR[progress.md]
+    PR --> SP
+```
 
 ## Recent Updates
 
-### 2/15/2025
-1. systemPatterns.md
-   - Added component-based architecture patterns
-   - Updated directory structure
-   - Added documentation patterns
-
-2. activeContext.md
-   - Added graph RAG refactoring details
-   - Updated component organization
-   - Added metrics improvements
-
-3. progress.md
-   - Updated completed work
-   - Added new known issues
+### 2025-02-16
+1. `activeContext.md`
+   - Added AWS service connectivity focus
+   - Documented OpenSearch fixes
+   - Added Neptune connection issues
    - Updated next steps
 
-## Dependencies
+2. `progress.md`
+   - Added completed OpenSearch tasks
+   - Updated Neptune connection status
+   - Added known issues
+   - Updated future work
 
-### Core Dependencies
-- projectbrief.md → All files (foundation)
-- systemPatterns.md → activeContext.md (guides current work)
-- progress.md → activeContext.md (tracks current status)
-
-### Implementation Dependencies
-- techContext.md → systemPatterns.md (informs architecture)
-- productContext.md → progress.md (guides features)
+3. `systemPatterns.md`
+   - Added AWS service patterns
+   - Added connection strategies
+   - Added error handling
+   - Added lessons learned
 
 ## Task-Relevant Files
 
-### Graph RAG Refactoring
-1. systemPatterns.md
-   - Component organization
-   - Design patterns
-   - Documentation standards
+### AWS Service Integration
+1. Primary:
+   - `systemPatterns.md`: Connection patterns
+   - `activeContext.md`: Current issues
+   - `progress.md`: Status tracking
 
-2. activeContext.md
-   - Current refactoring work
-   - Component decisions
-   - Metrics improvements
+2. Supporting:
+   - `utils/aws/neptune_utils.py`
+   - `utils/aws/opensearch_utils.py`
+   - `rag_implementations/graph_rag/components/vector_store.py`
 
-3. progress.md
-   - Implementation status
-   - Next improvements
-   - Known issues
+### Implementation Status
+1. OpenSearch:
+   - Status: Fixed
+   - Location: vector_store.py
+   - Pattern: systemPatterns.md#Connection
 
-## Update Schedule
+2. Neptune:
+   - Status: Investigating
+   - Location: neptune_utils.py
+   - Issues: activeContext.md#Issues
 
-### Daily Updates
-- activeContext.md
-- progress.md
+## Documentation Structure
 
-### As-Needed Updates
-- systemPatterns.md (on pattern changes)
-- techContext.md (on tech stack changes)
-- productContext.md (on requirement changes)
+### AWS Integration
+```mermaid
+flowchart TD
+    SP[systemPatterns.md] -->|Patterns| Code[Code Implementation]
+    AC[activeContext.md] -->|Issues| Code
+    PR[progress.md] -->|Status| Code
+    Code -->|Results| AC
+    Code -->|Updates| PR
+```
 
-### Milestone Updates
-- projectbrief.md (major changes only)
+### Error Handling
+```mermaid
+flowchart TD
+    Error[Error Occurs] --> SP[systemPatterns.md]
+    SP -->|Pattern| Handle[Handle Error]
+    Handle --> AC[activeContext.md]
+    AC --> PR[progress.md]
+```
+
+## Memory Organization
+
+### AWS Services
+1. Connection Management
+   - Patterns in systemPatterns.md
+   - Current issues in activeContext.md
+   - Progress in progress.md
+
+2. Resource Management
+   - Cleanup patterns
+   - DNS handling
+   - Auth configuration
+
+3. Error Handling
+   - Common errors
+   - Recovery strategies
+   - Testing patterns
+
+## Update Frequency
+
+### Regular Updates
+1. `activeContext.md`: As issues arise
+2. `progress.md`: After each change
+3. `systemPatterns.md`: When patterns emerge
+
+### Trigger Events
+1. New AWS service issues
+2. Pattern discoveries
+3. Implementation changes
+4. Error resolutions
+
+## Next Review
+- Focus: Neptune connection issues
+- Files to update:
+  - activeContext.md
+  - progress.md
+  - systemPatterns.md
+- When: After connection fix

@@ -1,90 +1,92 @@
-# Progress Tracking
+# Progress Report
 
-## Completed Work
+## Completed Tasks
 
-### 1. Baseline RAG Implementation
-- [x] Document ingestion with Langchain
-- [x] Vector storage with OpenSearch
-- [x] Response generation with Claude
-- [x] Benchmarking pipeline
-- [x] Standard RAG metrics
+### OpenSearch Integration
+1. Fixed authentication issues:
+   - Implemented proper AWS4Auth
+   - Added RequestsHttpConnection
+   - Configured SSL settings
 
-### 2. Graph RAG Implementation
-- [x] Document processing with entity extraction
-- [x] Graph storage with Neptune
-- [x] Vector storage with OpenSearch
-- [x] Hybrid search combining graph and vector results
-- [x] Response generation with graph context
-- [x] Component-based architecture
-- [x] Graph-specific metrics and visualization
+2. Improved domain management:
+   - Using consistent "rag-bench" domain name
+   - Added domain existence check
+   - Fixed cleanup handling
+   - Added DNS propagation check
 
-### 3. Evaluation Framework
-- [x] Dataset loading and preprocessing
-- [x] Standard RAG metrics
-- [x] Graph-specific metrics
-- [x] Result visualization
-- [x] Result persistence
+3. Removed environment variable dependency:
+   - No longer requires OPENSEARCH_HOST
+   - Self-manages domain creation/discovery
 
-### 4. Code Organization
-- [x] Modular component structure
-- [x] Clear separation of concerns
-- [x] Implementation-specific code isolation
-- [x] Shared utilities
-- [x] Documentation
+### Resource Management
+1. Improved cleanup handling:
+   - Prevent cleanup cascades
+   - Added proper deletion waiting
+   - Better error handling
 
-## In Progress
+2. Added resource discovery:
+   - Check for existing domains
+   - Reuse resources when possible
+   - Proper status checking
 
-### 1. Graph RAG Enhancements
-- [ ] Path-based relevance metrics
-- [ ] Entity importance weighting
-- [ ] Relation confidence scoring
-- [ ] Graph visualization tools
+## Current Issues
 
-### 2. Performance Optimization
-- [ ] Graph query optimization
-- [ ] Batch processing improvements
-- [ ] Resource usage monitoring
-- [ ] Caching strategies
+### Neptune Connection
+1. Connection failures:
+   - Cluster and instance create successfully
+   - DNS resolves correctly
+   - Connection still fails
+   - May be related to async/event loop handling
 
-### 3. Additional Features
-- [ ] More entity types
-- [ ] Complex relation extraction
-- [ ] Multi-hop reasoning
-- [ ] Graph pruning
+2. Potential causes:
+   - Event loop management
+   - Connection pooling
+   - IAM auth timing
+   - DNS propagation timing
+
+### Next Steps
+1. Neptune debugging:
+   - Review connection logs
+   - Test different connection settings
+   - Consider removing async complexity
+   - Add more detailed error logging
+
+2. Testing improvements:
+   - Add connection validation
+   - Improve retry logic
+   - Better error reporting
 
 ## Known Issues
 
-### 1. Performance
-- Large graph operations can be slow
-- Entity extraction needs optimization
-- Some redundant graph traversals
+1. Neptune Connection:
+   ```
+   Error during initialization: Failed to initialize GraphRAG: Failed to initialize graph store: Failed to connect to Neptune after 10 attempts
+   ```
+   - Status: Investigating
+   - Priority: High
+   - Impact: Blocks graph functionality
 
-### 2. Functionality
-- Limited relation types
-- Basic entity importance scoring
-- Simple graph traversal
+2. Resource Cleanup:
+   - Status: Fixed
+   - Previously: Cleanup cascade issues
+   - Now: Proper resource isolation
 
-### 3. Resource Usage
-- Neptune costs can be high
-- Memory usage with large graphs
-- API rate limits
+## Future Work
 
-## Next Steps
+1. Neptune Connection:
+   - Simplify connection logic
+   - Remove async complexity
+   - Add better validation
+   - Improve error handling
 
-### 1. Short Term
-1. Implement path-based relevance
-2. Add entity importance weighting
-3. Optimize graph queries
-4. Add graph visualization
+2. Testing:
+   - Add integration tests
+   - Improve error reporting
+   - Add connection validation
+   - Document failure modes
 
-### 2. Medium Term
-1. Enhance entity extraction
-2. Improve relation detection
-3. Add caching layer
-4. Optimize resource usage
-
-### 3. Long Term
-1. Multi-hop reasoning
-2. Complex graph patterns
-3. Advanced graph algorithms
-4. Cost optimization
+3. Documentation:
+   - Add troubleshooting guide
+   - Document connection patterns
+   - Add timing considerations
+   - Note AWS service quirks
