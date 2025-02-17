@@ -11,7 +11,7 @@ import pkg_resources
 def install_requirements():
     """Install required packages."""
     requirements = {
-        'gremlinpython': '3.4.10',  # Version compatible with Neptune
+        'gremlinpython': '3.6.3',  # Version compatible with Python 3.10
         'boto3': None,  # Latest version
     }
     
@@ -21,7 +21,7 @@ def install_requirements():
         except (pkg_resources.DistributionNotFound, pkg_resources.VersionConflict):
             print(f"Installing {package}...")
             spec = f"{package}=={version}" if version else package
-            subprocess.check_call([sys.executable, "-m", "pip", "install", spec])
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", spec])
 
 # Install dependencies
 print("Checking dependencies...")
@@ -34,6 +34,7 @@ from botocore.auth import SigV4Auth
 from botocore.awsrequest import AWSRequest
 from gremlin_python.driver.driver_remote_connection import DriverRemoteConnection
 from gremlin_python.process.anonymous_traversal import traversal
+from gremlin_python.driver.protocol import GremlinServerError
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -84,6 +85,9 @@ def test_connection():
         print("\nConnection test successful!")
         return True
         
+    except GremlinServerError as e:
+        print(f"\nGremlin Server Error: {str(e)}")
+        return False
     except Exception as e:
         print(f"\nConnection failed: {str(e)}")
         return False
@@ -92,7 +96,10 @@ def test_connection():
         # Clean up
         if 'remoteConn' in locals():
             print("\nClosing connection...")
-            remoteConn.close()
+            try:
+                remoteConn.close()
+            except:
+                pass
 
 if __name__ == "__main__":
     success = test_connection()
