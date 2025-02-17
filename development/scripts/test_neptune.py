@@ -14,6 +14,7 @@ def install_requirements():
     requirements = {
         'gremlinpython': '3.6.3',  # Version compatible with Python 3.10
         'boto3': None,  # Latest version
+        'requests': None  # For instance metadata
     }
     
     for package, version in requirements.items():
@@ -31,6 +32,7 @@ install_requirements()
 # Now import required packages
 import boto3
 import logging
+import requests
 from botocore.auth import SigV4Auth
 from botocore.awsrequest import AWSRequest
 from gremlin_python.driver.driver_remote_connection import DriverRemoteConnection
@@ -44,15 +46,14 @@ logger = logging.getLogger(__name__)
 def get_instance_identity():
     """Get current instance identity information."""
     try:
+        # First check if we're on EC2
+        response = requests.get('http://169.254.169.254/latest/meta-data/instance-id', timeout=2)
+        if response.status_code != 200:
+            return None
+            
+        instance_id = response.text
         metadata = boto3.client('ec2').describe_instances(
-            Filters=[
-                {
-                    'Name': 'instance-id',
-                    'Values': [
-                        requests.get('http://169.254.169.254/latest/meta-data/instance-id').text
-                    ]
-                }
-            ]
+            Filters=[{'Name': 'instance-id', 'Values': [instance_id]}]
         )
         return metadata['Reservations'][0]['Instances'][0]
     except:
@@ -89,6 +90,8 @@ def check_security_groups(cluster_name: str) -> bool:
             print("\nCurrent Instance Security Groups:")
             for sg in instance_security_groups:
                 print(f"- {sg['GroupName']} ({sg['GroupId']})")
+        else:
+            print("\nNot running on EC2 - skipping instance security group check")
         
         has_access = False
         for vpc_sg in vpc_security_groups:
@@ -105,6 +108,9 @@ def check_security_groups(cluster_name: str) -> bool:
                 if rule.get('FromPort', 0) <= 8182 <= rule.get('ToPort', 0):
                     for ip_range in rule.get('IpRanges', []):
                         print(f"- {ip_range['CidrIp']} (TCP {rule['FromPort']}-{rule['ToPort']})")
+                        # If we're not on EC2, any CIDR that allows 8182 is good enough
+                        if not instance_info:
+                            has_access = True
                     for group in rule.get('UserIdGroupPairs', []):
                         print(f"- Security Group: {group['GroupId']}")
                         # Check if our instance's security group is allowed
@@ -114,11 +120,14 @@ def check_security_groups(cluster_name: str) -> bool:
                             print("  (Current instance's security group)")
             
         if not has_access:
-            print("\nWarning: Current instance's security group does not have explicit access!")
+            print("\nWarning: No valid inbound rules found for port 8182!")
             print("Recommendations:")
             print("1. Add inbound rule for port 8182 to Neptune's security group")
-            print("2. Allow access from this instance's security group")
-            print("3. Or add CIDR range that includes this instance")
+            if instance_info:
+                print("2. Allow access from this instance's security group")
+                print("3. Or add CIDR range that includes this instance")
+            else:
+                print("2. Add CIDR range that includes your client IP")
             return False
             
         print("\nSecurity group configuration appears correct.")
