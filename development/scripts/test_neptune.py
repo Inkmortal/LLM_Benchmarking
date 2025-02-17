@@ -60,12 +60,15 @@ def test_connection():
         request = AWSRequest(method="GET", url=database_url)
         SigV4Auth(creds, "neptune-db", boto3.Session().region_name).add_auth(request)
         
+        # Convert headers to list of tuples
+        headers = [(k, v) for k, v in request.headers.items()]
+        
         # Initialize connection
         print("Initializing connection...")
         remoteConn = DriverRemoteConnection(
             database_url,
             'g',
-            headers=request.headers.items()
+            headers=headers
         )
         
         # Create traversal source
