@@ -57,15 +57,32 @@ def test_connection():
         
         # Set up request with IAM auth
         print("Setting up IAM auth...")
-        request = AWSRequest(method="GET", url=database_url, data=None)  # Added data=None
+        request = AWSRequest(method="GET", url=database_url, data=None)
         SigV4Auth(creds, "neptune-db", boto3.Session().region_name).add_auth(request)
         
+        # Debug headers
+        print("\nHeaders before conversion:")
+        for k, v in request.headers.items():
+            print(f"  {k}: {v}")
+            
+        # Convert headers to list of tuples
+        headers = []
+        for k, v in request.headers.items():
+            if isinstance(v, (str, bytes)):
+                headers.append((str(k), str(v)))
+            else:
+                print(f"Skipping header {k} with non-string value: {type(v)}")
+        
+        print("\nHeaders after conversion:")
+        for k, v in headers:
+            print(f"  {k}: {v}")
+        
         # Initialize connection
-        print("Initializing connection...")
+        print("\nInitializing connection...")
         remoteConn = DriverRemoteConnection(
             database_url,
             'g',
-            headers=list(request.headers.items())  # Convert to list explicitly
+            headers=headers
         )
         
         # Create traversal source
@@ -90,6 +107,9 @@ def test_connection():
         return False
     except Exception as e:
         print(f"\nConnection failed: {str(e)}")
+        print(f"Error type: {type(e)}")
+        import traceback
+        traceback.print_exc()
         return False
         
     finally:
