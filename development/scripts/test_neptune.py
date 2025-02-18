@@ -9,6 +9,7 @@ import socket
 import subprocess
 import pkg_resources
 import json
+import time
 
 def install_requirements():
     """Install required packages."""
@@ -86,13 +87,22 @@ def update_cluster_security_group(cluster_name: str, current_ip: str = None) -> 
             
         cluster = clusters['DBClusters'][0]
         
+        # Get VPC ID from subnet group
+        subnet_group = neptune.describe_db_subnet_groups(
+            DBSubnetGroupName=cluster['DBSubnetGroup']
+        )['DBSubnetGroups'][0]
+        vpc_id = subnet_group['VpcId']
+        
         # Create new security group
-        print("Creating new security group...")
+        print(f"Creating new security group in VPC {vpc_id}...")
         ec2 = boto3.client('ec2')
-        vpc_id = cluster['VpcSecurityGroups'][0]['VpcId']
+        
+        # Generate unique name with timestamp
+        timestamp = int(time.time())
+        group_name = f"neptune-access-{cluster_name}-{timestamp}"
         
         response = ec2.create_security_group(
-            GroupName=f"neptune-access-{cluster_name}",
+            GroupName=group_name,
             Description=f"Security group for Neptune cluster {cluster_name}",
             VpcId=vpc_id
         )
@@ -122,6 +132,14 @@ def update_cluster_security_group(cluster_name: str, current_ip: str = None) -> 
         neptune.modify_db_cluster(
             DBClusterIdentifier=cluster_name,
             VpcSecurityGroupIds=vpc_security_group_ids
+        )
+        
+        # Wait for the change to take effect
+        print("Waiting for security group update to take effect...")
+        waiter = neptune.get_waiter('db_cluster_available')
+        waiter.wait(
+            DBClusterIdentifier=cluster_name,
+            WaiterConfig={'Delay': 5, 'MaxAttempts': 60}
         )
         
         print("Security group updated successfully")
