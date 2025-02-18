@@ -47,22 +47,20 @@ def test_connection():
     print(f"Database URL: {database_url}")
     
     try:
-        # Create endpoints with proxy support
+        # Create endpoints with direct connection
+        print("\nTrying direct connection...")
         endpoints = Endpoints(
             neptune_endpoint=ENDPOINT,
-            region_name='us-west-2',
-            proxy_dns='localhost',  # Using localhost since we're in a notebook
-            proxy_port=PORT,
-            remove_host_header=False  # Important for ALB
+            region_name='us-west-2'
         )
         
         # Initialize Gremlin utilities
         GremlinUtils.init_statics(globals())
         gremlin_utils = GremlinUtils(endpoints)
         
-        # Create connection with SSL verification disabled since we're using a proxy
+        # Create connection
         print("\nInitializing connection...")
-        conn = gremlin_utils.remote_connection(ssl=False)
+        conn = gremlin_utils.remote_connection()
         
         # Create traversal source
         print("Creating traversal source...")
@@ -91,6 +89,10 @@ def test_connection():
     except Exception as e:
         print(f"\nConnection failed: {str(e)}")
         print(f"Error type: {type(e)}")
+        print("\nOptions:")
+        print("1. Set up an Application Load Balancer (ALB) in front of Neptune")
+        print("2. Move the SageMaker notebook into Neptune's VPC")
+        print("3. Create a new Neptune cluster with public access (not recommended for production)")
         import traceback
         traceback.print_exc()
         return False
