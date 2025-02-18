@@ -49,7 +49,7 @@ class NeptuneManager:
         self.endpoint = None
         self.param_group_name = f"{cluster_name}-params"
         self.vpc_id = None
-        self.subnet_id = None
+        self.subnet_ids = []
         self.security_group_id = None
         
         # Get identity for IAM auth
@@ -65,12 +65,12 @@ class NeptuneManager:
         if self.verbose:
             print(message)
     
-    def _create_vpc(self) -> Tuple[str, str, str]:
+    def _create_vpc(self) -> Tuple[str, List[str], str]:
         """
-        Create VPC with public subnet for Neptune.
+        Create VPC with public subnets in multiple AZs for Neptune.
         
         Returns:
-            Tuple of (vpc_id, subnet_id, security_group_id)
+            Tuple of (vpc_id, subnet_ids, security_group_id)
         """
         try:
             # Create VPC
@@ -100,17 +100,29 @@ class NeptuneManager:
                 VpcId=vpc_id
             )
             
-            # Create subnet
-            self._log("Creating subnet...")
-            subnet = self.ec2.create_subnet(
-                VpcId=vpc_id,
-                CidrBlock='10.0.0.0/24',
-                TagSpecifications=[{
-                    'ResourceType': 'subnet',
-                    'Tags': [{'Key': 'Name', 'Value': f'{self.cluster_name}-subnet'}]
-                }]
-            )
-            subnet_id = subnet['Subnet']['SubnetId']
+            # Get available AZs
+            azs = self.ec2.describe_availability_zones()['AvailabilityZones']
+            subnet_ids = []
+            
+            # Create subnets in first 2 AZs
+            for i, az in enumerate(azs[:2]):
+                self._log(f"Creating subnet in {az['ZoneName']}...")
+                subnet = self.ec2.create_subnet(
+                    VpcId=vpc_id,
+                    CidrBlock=f'10.0.{i}.0/24',
+                    AvailabilityZone=az['ZoneName'],
+                    TagSpecifications=[{
+                        'ResourceType': 'subnet',
+                        'Tags': [{'Key': 'Name', 'Value': f'{self.cluster_name}-subnet-{i+1}'}]
+                    }]
+                )
+                subnet_ids.append(subnet['Subnet']['SubnetId'])
+                
+                # Enable auto-assign public IP
+                self.ec2.modify_subnet_attribute(
+                    SubnetId=subnet['Subnet']['SubnetId'],
+                    MapPublicIpOnLaunch={'Value': True}
+                )
             
             # Create route table
             self._log("Configuring route table...")
@@ -124,11 +136,12 @@ class NeptuneManager:
                 GatewayId=igw_id
             )
             
-            # Associate route table with subnet
-            self.ec2.associate_route_table(
-                RouteTableId=route_table_id,
-                SubnetId=subnet_id
-            )
+            # Associate route table with all subnets
+            for subnet_id in subnet_ids:
+                self.ec2.associate_route_table(
+                    RouteTableId=route_table_id,
+                    SubnetId=subnet_id
+                )
             
             # Create security group
             self._log("Creating security group...")
@@ -155,10 +168,10 @@ class NeptuneManager:
             
             # Store IDs for cleanup
             self.vpc_id = vpc_id
-            self.subnet_id = subnet_id
+            self.subnet_ids = subnet_ids
             self.security_group_id = security_group_id
             
-            return vpc_id, subnet_id, security_group_id
+            return vpc_id, subnet_ids, security_group_id
             
         except Exception as e:
             self._log(f"Error creating VPC: {str(e)}")
@@ -316,7 +329,7 @@ class NeptuneManager:
             
             # Create VPC infrastructure
             self._log("Setting up VPC...")
-            vpc_id, subnet_id, security_group_id = self._create_vpc()
+            vpc_id, subnet_ids, security_group_id = self._create_vpc()
             
             # Create parameter group
             self._create_parameter_group()
@@ -330,7 +343,7 @@ class NeptuneManager:
                 self.neptune.create_db_subnet_group(
                     DBSubnetGroupName=subnet_group_name,
                     DBSubnetGroupDescription=f'Subnet group for {self.cluster_name}',
-                    SubnetIds=[subnet_id]
+                    SubnetIds=subnet_ids
                 )
             except ClientError as e:
                 if e.response['Error']['Code'] != 'DBSubnetGroupAlreadyExistsFault':
@@ -487,11 +500,11 @@ class NeptuneManager:
                             InternetGatewayId=igw['InternetGatewayId']
                         )
                     
-                    # Delete subnet
-                    if self.subnet_id:
-                        self._log(f"Deleting subnet: {self.subnet_id}")
+                    # Delete subnets
+                    for subnet_id in self.subnet_ids:
+                        self._log(f"Deleting subnet: {subnet_id}")
                         try:
-                            self.ec2.delete_subnet(SubnetId=self.subnet_id)
+                            self.ec2.delete_subnet(SubnetId=subnet_id)
                         except ClientError as e:
                             if e.response['Error']['Code'] != 'InvalidSubnetID.NotFound':
                                 raise
