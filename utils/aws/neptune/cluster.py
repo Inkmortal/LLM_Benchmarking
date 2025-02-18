@@ -1,0 +1,301 @@
+"""
+Neptune cluster management utilities.
+"""
+
+import time
+import socket
+from typing import Optional
+import boto3
+from botocore.exceptions import ClientError
+
+class ClusterManager:
+    def __init__(self, cluster_name: str, session: boto3.Session, verbose: bool = True):
+        self.cluster_name = cluster_name
+        self.neptune = session.client('neptune')
+        self.verbose = verbose
+        
+        # Track resources
+        self.cluster_id = None
+        self.instance_id = None
+        self.endpoint = None
+        self.param_group_name = f"{cluster_name}-params"
+    
+    def _log(self, message: str) -> None:
+        """Print message if verbose mode is enabled."""
+        if self.verbose:
+            print(message)
+    
+    def create_parameter_group(self) -> None:
+        """Create a custom DB cluster parameter group."""
+        try:
+            self._log(f"Creating parameter group: {self.param_group_name}")
+            self.neptune.create_db_cluster_parameter_group(
+                DBClusterParameterGroupName=self.param_group_name,
+                DBParameterGroupFamily='neptune1.2',
+                Description=f'Custom parameter group for {self.cluster_name}'
+            )
+        except ClientError as e:
+            if e.response['Error']['Code'] != 'DBParameterGroupAlreadyExists':
+                raise
+            self._log(f"Using existing parameter group: {self.param_group_name}")
+    
+    def create_cluster(
+        self,
+        subnet_ids: list[str],
+        security_group_id: str,
+        subnet_group_name: Optional[str] = None
+    ) -> str:
+        """
+        Create Neptune cluster and return endpoint.
+        
+        Args:
+            subnet_ids: List of subnet IDs
+            security_group_id: Security group ID
+            subnet_group_name: Optional subnet group name (defaults to {cluster_name}-subnet-group)
+            
+        Returns:
+            Neptune cluster endpoint
+        """
+        try:
+            # Create parameter group
+            self.create_parameter_group()
+            
+            # Create subnet group
+            if not subnet_group_name:
+                subnet_group_name = f"{self.cluster_name}-subnet-group"
+                
+            try:
+                self.neptune.create_db_subnet_group(
+                    DBSubnetGroupName=subnet_group_name,
+                    DBSubnetGroupDescription=f'Subnet group for {self.cluster_name}',
+                    SubnetIds=subnet_ids
+                )
+            except ClientError as e:
+                if e.response['Error']['Code'] != 'DBSubnetGroupAlreadyExistsFault':
+                    raise
+            
+            # Create cluster with serverless configuration
+            self._log(f"Creating Neptune cluster: {self.cluster_name}")
+            response = self.neptune.create_db_cluster(
+                DBClusterIdentifier=self.cluster_name,
+                Engine='neptune',
+                EngineVersion='1.2.1.0',
+                ServerlessV2ScalingConfiguration={
+                    'MinCapacity': 1.0,
+                    'MaxCapacity': 8.0
+                },
+                EnableIAMDatabaseAuthentication=True,
+                DeletionProtection=False,
+                Port=8182,
+                DBClusterParameterGroupName=self.param_group_name,
+                VpcSecurityGroupIds=[security_group_id],
+                DBSubnetGroupName=subnet_group_name
+            )
+            
+            cluster = response['DBCluster']
+            self.cluster_id = cluster['DBClusterIdentifier']
+            
+            # Wait for cluster to be available
+            self._wait_for_cluster(self.cluster_id)
+            
+            # Get endpoint
+            response = self.neptune.describe_db_clusters(
+                DBClusterIdentifier=self.cluster_id
+            )
+            self.endpoint = response['DBClusters'][0]['Endpoint']
+            
+            self._log(f"Neptune cluster created: {self.cluster_id}")
+            
+            # Ensure instance exists and is ready
+            self._ensure_instance()
+            
+            # Check DNS propagation
+            self._check_dns_propagation(self.endpoint)
+            
+            return self.endpoint
+            
+        except Exception as e:
+            self._log(f"Error creating cluster: {str(e)}")
+            raise
+    
+    def _wait_for_cluster(self, cluster_id: str, timeout: int = 1800) -> None:
+        """Wait for cluster to be available using polling."""
+        self._log("Waiting for cluster to be available...")
+        start_time = time.time()
+        while True:
+            try:
+                response = self.neptune.describe_db_clusters(
+                    DBClusterIdentifier=cluster_id
+                )
+                status = response['DBClusters'][0]['Status']
+                if status == 'available':
+                    self._log("Cluster is available")
+                    return
+                elif status == 'failed':
+                    raise Exception(f"Cluster creation failed: {cluster_id}")
+                elif time.time() - start_time > timeout:
+                    raise Exception(f"Timeout waiting for cluster: {cluster_id}")
+                else:
+                    self._log(f"Cluster status: {status}")
+                    time.sleep(30)
+            except ClientError as e:
+                if e.response['Error']['Code'] == 'DBClusterNotFoundFault':
+                    raise Exception(f"Cluster not found: {cluster_id}")
+                raise
+    
+    def _wait_for_instance(self, instance_id: str, timeout: int = 1800) -> None:
+        """Wait for instance to be available using polling."""
+        self._log("Waiting for instance to be available...")
+        start_time = time.time()
+        while True:
+            try:
+                response = self.neptune.describe_db_instances(
+                    DBInstanceIdentifier=instance_id
+                )
+                status = response['DBInstances'][0]['DBInstanceStatus']
+                if status == 'available':
+                    self._log("Instance is available")
+                    return
+                elif status == 'failed':
+                    raise Exception(f"Instance creation failed: {instance_id}")
+                elif time.time() - start_time > timeout:
+                    raise Exception(f"Timeout waiting for instance: {instance_id}")
+                else:
+                    self._log(f"Instance status: {status}")
+                    time.sleep(30)
+            except ClientError as e:
+                if e.response['Error']['Code'] == 'DBInstanceNotFound':
+                    raise Exception(f"Instance not found: {instance_id}")
+                raise
+    
+    def _ensure_instance(self) -> None:
+        """Ensure cluster has at least one instance."""
+        # Check existing instances
+        instances = self.neptune.describe_db_instances(
+            Filters=[{'Name': 'db-cluster-id', 'Values': [self.cluster_id]}]
+        )
+        
+        if not instances['DBInstances']:
+            self._log("Creating serverless instance...")
+            self.instance_id = f"{self.cluster_id}-instance"
+            
+            # Create instance
+            self.neptune.create_db_instance(
+                DBInstanceIdentifier=self.instance_id,
+                DBClusterIdentifier=self.cluster_id,
+                Engine='neptune',
+                DBInstanceClass='db.serverless'
+            )
+            
+            # Wait for instance
+            self._wait_for_instance(self.instance_id)
+            
+        else:
+            instance = instances['DBInstances'][0]
+            self.instance_id = instance['DBInstanceIdentifier']
+            
+            # Only wait if instance not ready
+            if instance['DBInstanceStatus'] != 'available':
+                self._wait_for_instance(self.instance_id)
+            else:
+                self._log(f"Using existing instance: {self.instance_id}")
+    
+    def _check_dns_propagation(self, endpoint: str, timeout: int = 300) -> None:
+        """Check if DNS has propagated for endpoint."""
+        self._log("Checking DNS propagation...")
+        start_time = time.time()
+        while True:
+            try:
+                # Try to resolve the hostname
+                socket.gethostbyname(endpoint)
+                self._log("DNS resolution successful")
+                return
+            except socket.gaierror:
+                if time.time() - start_time > timeout:
+                    raise Exception(f"DNS propagation timeout for endpoint: {endpoint}")
+                self._log("Waiting for DNS propagation...")
+                time.sleep(10)  # Check every 10 seconds
+    
+    def cleanup(self) -> None:
+        """Clean up cluster resources."""
+        try:
+            if self.instance_id:
+                self._log(f"Deleting instance: {self.instance_id}")
+                try:
+                    self.neptune.delete_db_instance(
+                        DBInstanceIdentifier=self.instance_id,
+                        SkipFinalSnapshot=True
+                    )
+                    
+                    # Wait for instance deletion
+                    start_time = time.time()
+                    while True:
+                        try:
+                            self.neptune.describe_db_instances(
+                                DBInstanceIdentifier=self.instance_id
+                            )
+                            if time.time() - start_time > 1800:  # 30 minutes
+                                raise Exception(f"Timeout waiting for instance deletion: {self.instance_id}")
+                            time.sleep(30)
+                        except ClientError as e:
+                            if e.response['Error']['Code'] == 'DBInstanceNotFound':
+                                break
+                            raise
+                        
+                except ClientError as e:
+                    if e.response['Error']['Code'] != 'DBInstanceNotFound':
+                        raise
+            
+            if self.cluster_id:
+                self._log(f"Deleting cluster: {self.cluster_id}")
+                try:
+                    self.neptune.delete_db_cluster(
+                        DBClusterIdentifier=self.cluster_id,
+                        SkipFinalSnapshot=True
+                    )
+                    
+                    # Wait for cluster deletion
+                    start_time = time.time()
+                    while True:
+                        try:
+                            self.neptune.describe_db_clusters(
+                                DBClusterIdentifier=self.cluster_id
+                            )
+                            if time.time() - start_time > 1800:  # 30 minutes
+                                raise Exception(f"Timeout waiting for cluster deletion: {self.cluster_id}")
+                            time.sleep(30)
+                        except ClientError as e:
+                            if e.response['Error']['Code'] == 'DBClusterNotFoundFault':
+                                break
+                            raise
+                        
+                except ClientError as e:
+                    if e.response['Error']['Code'] != 'DBClusterNotFoundFault':
+                        raise
+                
+                # Delete parameter group
+                try:
+                    self._log(f"Deleting parameter group: {self.param_group_name}")
+                    self.neptune.delete_db_cluster_parameter_group(
+                        DBClusterParameterGroupName=self.param_group_name
+                    )
+                except ClientError as e:
+                    if e.response['Error']['Code'] != 'DBParameterGroupNotFound':
+                        raise
+                
+                # Delete subnet group
+                try:
+                    subnet_group_name = f"{self.cluster_name}-subnet-group"
+                    self._log(f"Deleting subnet group: {subnet_group_name}")
+                    self.neptune.delete_db_subnet_group(
+                        DBSubnetGroupName=subnet_group_name
+                    )
+                except ClientError as e:
+                    if e.response['Error']['Code'] != 'DBSubnetGroupNotFoundFault':
+                        raise
+                
+                self._log("Cleanup complete")
+                
+        except Exception as e:
+            self._log(f"Error during cleanup: {str(e)}")
+            raise
