@@ -49,20 +49,38 @@ def get_sagemaker_subnet_cidr() -> str:
     print("\nGetting SageMaker subnet CIDR...")
     
     try:
-        # Get notebook name from environment
-        notebook_name = os.environ.get('NOTEBOOK_NAME')
-        if not notebook_name:
-            # Try to get it from the instance metadata
-            response = requests.get('http://169.254.169.254/latest/meta-data/tags/instance/Name', timeout=2)
-            if response.status_code == 200:
-                notebook_name = response.text
-            else:
-                raise Exception("Could not determine notebook instance name")
+        # Get instance ID from metadata service
+        response = requests.get('http://169.254.169.254/latest/meta-data/instance-id', timeout=2)
+        if response.status_code != 200:
+            raise Exception("Could not get instance ID from metadata service")
+            
+        instance_id = response.text
+        print(f"Instance ID: {instance_id}")
         
+        # Find notebook instance by instance ID
+        sagemaker = boto3.client('sagemaker')
+        paginator = sagemaker.get_paginator('list_notebook_instances')
+        
+        notebook_name = None
+        for page in paginator.paginate():
+            for notebook in page['NotebookInstances']:
+                if notebook.get('NotebookInstanceName'):
+                    # Describe notebook to get instance ID
+                    details = sagemaker.describe_notebook_instance(
+                        NotebookInstanceName=notebook['NotebookInstanceName']
+                    )
+                    if details.get('InstanceId') == instance_id:
+                        notebook_name = notebook['NotebookInstanceName']
+                        break
+            if notebook_name:
+                break
+                
+        if not notebook_name:
+            raise Exception(f"Could not find notebook instance for ID: {instance_id}")
+            
         print(f"Notebook instance: {notebook_name}")
         
         # Get notebook instance details
-        sagemaker = boto3.client('sagemaker')
         notebook = sagemaker.describe_notebook_instance(
             NotebookInstanceName=notebook_name
         )
