@@ -31,6 +31,9 @@ import logging
 from neptune_python_utils.endpoints import Endpoints
 from neptune_python_utils.gremlin_utils import GremlinUtils
 
+# Import our Neptune manager
+from utils.aws.neptune_utils import NeptuneManager
+
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -38,25 +41,27 @@ logger = logging.getLogger(__name__)
 def test_connection():
     """Test Neptune connection."""
     
-    # Neptune endpoint
-    CLUSTER_NAME = "graph-rag-originofcovid19dataset-benchmark"
-    ENDPOINT = f"{CLUSTER_NAME}.cluster-c7m8ay28gj4o.us-west-2.neptune.amazonaws.com"
-    PORT = 8182
-    database_url = f"wss://{ENDPOINT}:{PORT}/gremlin"
-    
-    print(f"Database URL: {database_url}")
+    # Neptune cluster name
+    CLUSTER_NAME = "test-graph-rag-benchmark"
     
     try:
-        # Create endpoints with direct connection
-        print("\nTrying direct connection...")
-        endpoints = Endpoints(
-            neptune_endpoint=ENDPOINT,
-            region_name='us-west-2'
+        # Create Neptune manager
+        print(f"\nSetting up Neptune cluster: {CLUSTER_NAME}")
+        manager = NeptuneManager(
+            cluster_name=CLUSTER_NAME,
+            cleanup_enabled=True,  # Will clean up resources on failure
+            verbose=True,
+            region='us-west-2'
         )
         
+        # Set up cluster in VPC
+        endpoint = manager.setup_cluster()
+        print(f"\nCluster endpoint: {endpoint}")
+        
         # Initialize Gremlin utilities
+        print("\nInitializing Gremlin utilities...")
         GremlinUtils.init_statics(globals())
-        gremlin_utils = GremlinUtils(endpoints)
+        gremlin_utils = GremlinUtils(Endpoints(neptune_endpoint=endpoint))
         
         # Create connection
         print("\nInitializing connection...")
@@ -89,10 +94,6 @@ def test_connection():
     except Exception as e:
         print(f"\nConnection failed: {str(e)}")
         print(f"Error type: {type(e)}")
-        print("\nOptions:")
-        print("1. Set up an Application Load Balancer (ALB) in front of Neptune")
-        print("2. Move the SageMaker notebook into Neptune's VPC")
-        print("3. Create a new Neptune cluster with public access (not recommended for production)")
         import traceback
         traceback.print_exc()
         return False
@@ -105,6 +106,14 @@ def test_connection():
                 conn.close()
             except:
                 pass
+        
+        # Clean up Neptune resources
+        if 'manager' in locals():
+            print("\nCleaning up Neptune resources...")
+            try:
+                manager.cleanup()
+            except Exception as e:
+                print(f"Error during cleanup: {str(e)}")
 
 if __name__ == "__main__":
     success = test_connection()

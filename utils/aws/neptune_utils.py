@@ -7,7 +7,7 @@ import time
 import json
 import boto3
 import socket
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 from botocore.exceptions import ClientError
 from botocore.auth import SigV4Auth
 from botocore.awsrequest import AWSRequest
@@ -23,7 +23,8 @@ class NeptuneManager:
         self,
         cluster_name: str,
         cleanup_enabled: bool = True,
-        verbose: bool = True
+        verbose: bool = True,
+        region: str = None
     ):
         """
         Initialize Neptune manager.
@@ -32,19 +33,24 @@ class NeptuneManager:
             cluster_name: Name for the Neptune cluster
             cleanup_enabled: Whether to enable cleanup on deletion
             verbose: Whether to print detailed status messages
+            region: AWS region (defaults to session region)
         """
         self.cluster_name = cluster_name
         self.cleanup_enabled = cleanup_enabled
         self.verbose = verbose
         
         # Initialize AWS clients
-        self.neptune = boto3.client('neptune')
+        self.neptune = boto3.client('neptune', region_name=region)
+        self.ec2 = boto3.client('ec2', region_name=region)
         
         # Track created resources
         self.cluster_id = None
         self.instance_id = None
         self.endpoint = None
         self.param_group_name = f"{cluster_name}-params"
+        self.vpc_id = None
+        self.subnet_id = None
+        self.security_group_id = None
         
         # Get identity for IAM auth
         sts = boto3.client('sts')
@@ -58,6 +64,105 @@ class NeptuneManager:
         """Print message if verbose mode is enabled."""
         if self.verbose:
             print(message)
+    
+    def _create_vpc(self) -> Tuple[str, str, str]:
+        """
+        Create VPC with public subnet for Neptune.
+        
+        Returns:
+            Tuple of (vpc_id, subnet_id, security_group_id)
+        """
+        try:
+            # Create VPC
+            self._log("Creating VPC...")
+            vpc = self.ec2.create_vpc(
+                CidrBlock='10.0.0.0/16',
+                TagSpecifications=[{
+                    'ResourceType': 'vpc',
+                    'Tags': [{'Key': 'Name', 'Value': f'{self.cluster_name}-vpc'}]
+                }]
+            )
+            vpc_id = vpc['Vpc']['VpcId']
+            
+            # Enable DNS hostnames
+            self.ec2.modify_vpc_attribute(
+                VpcId=vpc_id,
+                EnableDnsHostnames={'Value': True}
+            )
+            
+            # Create internet gateway
+            self._log("Creating internet gateway...")
+            igw = self.ec2.create_internet_gateway()
+            igw_id = igw['InternetGateway']['InternetGatewayId']
+            
+            self.ec2.attach_internet_gateway(
+                InternetGatewayId=igw_id,
+                VpcId=vpc_id
+            )
+            
+            # Create subnet
+            self._log("Creating subnet...")
+            subnet = self.ec2.create_subnet(
+                VpcId=vpc_id,
+                CidrBlock='10.0.0.0/24',
+                TagSpecifications=[{
+                    'ResourceType': 'subnet',
+                    'Tags': [{'Key': 'Name', 'Value': f'{self.cluster_name}-subnet'}]
+                }]
+            )
+            subnet_id = subnet['Subnet']['SubnetId']
+            
+            # Create route table
+            self._log("Configuring route table...")
+            route_table = self.ec2.create_route_table(VpcId=vpc_id)
+            route_table_id = route_table['RouteTable']['RouteTableId']
+            
+            # Add route to internet
+            self.ec2.create_route(
+                RouteTableId=route_table_id,
+                DestinationCidrBlock='0.0.0.0/0',
+                GatewayId=igw_id
+            )
+            
+            # Associate route table with subnet
+            self.ec2.associate_route_table(
+                RouteTableId=route_table_id,
+                SubnetId=subnet_id
+            )
+            
+            # Create security group
+            self._log("Creating security group...")
+            security_group = self.ec2.create_security_group(
+                GroupName=f'{self.cluster_name}-sg',
+                Description=f'Security group for Neptune cluster {self.cluster_name}',
+                VpcId=vpc_id
+            )
+            security_group_id = security_group['GroupId']
+            
+            # Add inbound rule for Neptune port
+            self.ec2.authorize_security_group_ingress(
+                GroupId=security_group_id,
+                IpPermissions=[{
+                    'FromPort': 8182,
+                    'ToPort': 8182,
+                    'IpProtocol': 'tcp',
+                    'IpRanges': [{
+                        'CidrIp': '0.0.0.0/0',
+                        'Description': 'Allow Neptune access'
+                    }]
+                }]
+            )
+            
+            # Store IDs for cleanup
+            self.vpc_id = vpc_id
+            self.subnet_id = subnet_id
+            self.security_group_id = security_group_id
+            
+            return vpc_id, subnet_id, security_group_id
+            
+        except Exception as e:
+            self._log(f"Error creating VPC: {str(e)}")
+            raise
     
     def _create_parameter_group(self) -> None:
         """Create a custom DB cluster parameter group."""
@@ -196,55 +301,72 @@ class NeptuneManager:
             Neptune cluster endpoint
         """
         try:
-            # Check if cluster already exists
+            # Delete existing cluster if it exists
             try:
+                self._log(f"Checking for existing cluster: {self.cluster_name}")
                 response = self.neptune.describe_db_clusters(
                     DBClusterIdentifier=self.cluster_name
                 )
-                cluster = response['DBClusters'][0]
-                self.cluster_id = cluster['DBClusterIdentifier']
-                self.endpoint = cluster['Endpoint']
-                self._log(f"Using existing Neptune cluster: {self.cluster_id}")
-                
+                if response['DBClusters']:
+                    self._log("Found existing cluster, cleaning up...")
+                    self.cleanup()
             except ClientError as e:
-                if e.response['Error']['Code'] == 'DBClusterNotFoundFault':
-                    # Create parameter group first
-                    self._create_parameter_group()
-                    
-                    # Create new cluster
-                    self._log(f"Creating Neptune cluster: {self.cluster_name}")
-                    
-                    # Create cluster with serverless configuration
-                    response = self.neptune.create_db_cluster(
-                        DBClusterIdentifier=self.cluster_name,
-                        Engine='neptune',
-                        EngineVersion='1.2.1.0',
-                        ServerlessV2ScalingConfiguration={
-                            'MinCapacity': 1.0,
-                            'MaxCapacity': 8.0
-                        },
-                        EnableIAMDatabaseAuthentication=True,
-                        DeletionProtection=False,
-                        Port=8182,
-                        DBClusterParameterGroupName=self.param_group_name
-                    )
-                    
-                    cluster = response['DBCluster']
-                    self.cluster_id = cluster['DBClusterIdentifier']
-                    
-                    # Wait for cluster to be available
-                    self._wait_for_cluster(self.cluster_id)
-                    
-                    # Get endpoint
-                    response = self.neptune.describe_db_clusters(
-                        DBClusterIdentifier=self.cluster_id
-                    )
-                    self.endpoint = response['DBClusters'][0]['Endpoint']
-                    
-                    self._log(f"Neptune cluster created: {self.cluster_id}")
-                    self._resources_created = True
-                else:
+                if e.response['Error']['Code'] != 'DBClusterNotFoundFault':
                     raise
+            
+            # Create VPC infrastructure
+            self._log("Setting up VPC...")
+            vpc_id, subnet_id, security_group_id = self._create_vpc()
+            
+            # Create parameter group
+            self._create_parameter_group()
+            
+            # Create new cluster
+            self._log(f"Creating Neptune cluster: {self.cluster_name}")
+            
+            # Create subnet group
+            subnet_group_name = f"{self.cluster_name}-subnet-group"
+            try:
+                self.neptune.create_db_subnet_group(
+                    DBSubnetGroupName=subnet_group_name,
+                    DBSubnetGroupDescription=f'Subnet group for {self.cluster_name}',
+                    SubnetIds=[subnet_id]
+                )
+            except ClientError as e:
+                if e.response['Error']['Code'] != 'DBSubnetGroupAlreadyExistsFault':
+                    raise
+            
+            # Create cluster with serverless configuration
+            response = self.neptune.create_db_cluster(
+                DBClusterIdentifier=self.cluster_name,
+                Engine='neptune',
+                EngineVersion='1.2.1.0',
+                ServerlessV2ScalingConfiguration={
+                    'MinCapacity': 1.0,
+                    'MaxCapacity': 8.0
+                },
+                EnableIAMDatabaseAuthentication=True,
+                DeletionProtection=False,
+                Port=8182,
+                DBClusterParameterGroupName=self.param_group_name,
+                VpcSecurityGroupIds=[security_group_id],
+                DBSubnetGroupName=subnet_group_name
+            )
+            
+            cluster = response['DBCluster']
+            self.cluster_id = cluster['DBClusterIdentifier']
+            
+            # Wait for cluster to be available
+            self._wait_for_cluster(self.cluster_id)
+            
+            # Get endpoint
+            response = self.neptune.describe_db_clusters(
+                DBClusterIdentifier=self.cluster_id
+            )
+            self.endpoint = response['DBClusters'][0]['Endpoint']
+            
+            self._log(f"Neptune cluster created: {self.cluster_id}")
+            self._resources_created = True
             
             # Ensure instance exists and is ready
             self._ensure_instance()
@@ -328,6 +450,59 @@ class NeptuneManager:
                 except ClientError as e:
                     if e.response['Error']['Code'] != 'DBParameterGroupNotFound':
                         raise
+                
+                # Delete subnet group
+                try:
+                    subnet_group_name = f"{self.cluster_name}-subnet-group"
+                    self._log(f"Deleting subnet group: {subnet_group_name}")
+                    self.neptune.delete_db_subnet_group(
+                        DBSubnetGroupName=subnet_group_name
+                    )
+                except ClientError as e:
+                    if e.response['Error']['Code'] != 'DBSubnetGroupNotFoundFault':
+                        raise
+                
+                # Delete security group
+                if self.security_group_id:
+                    self._log(f"Deleting security group: {self.security_group_id}")
+                    try:
+                        self.ec2.delete_security_group(GroupId=self.security_group_id)
+                    except ClientError as e:
+                        if e.response['Error']['Code'] != 'InvalidGroup.NotFound':
+                            raise
+                
+                # Delete VPC resources
+                if self.vpc_id:
+                    # Delete internet gateway
+                    self._log("Deleting internet gateway...")
+                    igws = self.ec2.describe_internet_gateways(
+                        Filters=[{'Name': 'attachment.vpc-id', 'Values': [self.vpc_id]}]
+                    )
+                    for igw in igws['InternetGateways']:
+                        self.ec2.detach_internet_gateway(
+                            InternetGatewayId=igw['InternetGatewayId'],
+                            VpcId=self.vpc_id
+                        )
+                        self.ec2.delete_internet_gateway(
+                            InternetGatewayId=igw['InternetGatewayId']
+                        )
+                    
+                    # Delete subnet
+                    if self.subnet_id:
+                        self._log(f"Deleting subnet: {self.subnet_id}")
+                        try:
+                            self.ec2.delete_subnet(SubnetId=self.subnet_id)
+                        except ClientError as e:
+                            if e.response['Error']['Code'] != 'InvalidSubnetID.NotFound':
+                                raise
+                    
+                    # Delete VPC
+                    self._log(f"Deleting VPC: {self.vpc_id}")
+                    try:
+                        self.ec2.delete_vpc(VpcId=self.vpc_id)
+                    except ClientError as e:
+                        if e.response['Error']['Code'] != 'InvalidVpcID.NotFound':
+                            raise
                 
                 self._log("Cleanup complete")
                 
