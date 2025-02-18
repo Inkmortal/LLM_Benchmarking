@@ -9,7 +9,6 @@ import socket
 import subprocess
 import pkg_resources
 import json
-import time
 
 def install_requirements():
     """Install required packages."""
@@ -45,41 +44,54 @@ from gremlin_python.driver.protocol import GremlinServerError
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def get_instance_identity():
-    """Get current instance identity information."""
-    try:
-        # First check if we're on EC2
-        response = requests.get('http://169.254.169.254/latest/meta-data/instance-id', timeout=2)
-        if response.status_code != 200:
-            return None
-            
-        instance_id = response.text
-        metadata = boto3.client('ec2').describe_instances(
-            Filters=[{'Name': 'instance-id', 'Values': [instance_id]}]
-        )
-        return metadata['Reservations'][0]['Instances'][0]
-    except:
-        return None
-
-def get_current_ip():
-    """Get current public IP address."""
-    try:
-        response = requests.get('https://checkip.amazonaws.com', timeout=5)
-        return response.text.strip()
-    except:
-        return None
-
-def check_vpc_connectivity(cluster_name: str) -> bool:
-    """Check VPC connectivity between SageMaker and Neptune."""
-    print("\nChecking VPC connectivity...")
+def get_sagemaker_subnet_cidr() -> str:
+    """Get CIDR block of SageMaker notebook's subnet."""
+    print("\nGetting SageMaker subnet CIDR...")
     
     try:
-        # Get Neptune cluster details
-        neptune = boto3.client('neptune')
-        ec2 = boto3.client('ec2')
-        sagemaker = boto3.client('sagemaker')
+        # Get notebook name from environment
+        notebook_name = os.environ.get('NOTEBOOK_NAME')
+        if not notebook_name:
+            # Try to get it from the instance metadata
+            response = requests.get('http://169.254.169.254/latest/meta-data/tags/instance/Name', timeout=2)
+            if response.status_code == 200:
+                notebook_name = response.text
+            else:
+                raise Exception("Could not determine notebook instance name")
         
+        print(f"Notebook instance: {notebook_name}")
+        
+        # Get notebook instance details
+        sagemaker = boto3.client('sagemaker')
+        notebook = sagemaker.describe_notebook_instance(
+            NotebookInstanceName=notebook_name
+        )
+        
+        subnet_id = notebook.get('SubnetId')
+        if not subnet_id:
+            raise Exception("Notebook instance is not in a VPC")
+            
+        print(f"Subnet ID: {subnet_id}")
+        
+        # Get subnet CIDR
+        ec2 = boto3.client('ec2')
+        subnet = ec2.describe_subnets(SubnetIds=[subnet_id])['Subnets'][0]
+        cidr = subnet['CidrBlock']
+        
+        print(f"Subnet CIDR: {cidr}")
+        return cidr
+        
+    except Exception as e:
+        print(f"Error getting subnet CIDR: {str(e)}")
+        raise
+
+def update_neptune_security_group(cluster_name: str, cidr_block: str) -> bool:
+    """Update Neptune security group to allow access from CIDR."""
+    print(f"\nUpdating Neptune security group for cluster {cluster_name}...")
+    
+    try:
         # Get cluster info
+        neptune = boto3.client('neptune')
         clusters = neptune.describe_db_clusters(
             DBClusterIdentifier=cluster_name
         )
@@ -89,82 +101,57 @@ def check_vpc_connectivity(cluster_name: str) -> bool:
             return False
             
         cluster = clusters['DBClusters'][0]
-        neptune_vpc_id = cluster['VpcSecurityGroups'][0]['VpcId']
-        neptune_subnet_ids = cluster['DBSubnetGroup']['Subnets']
         
-        print(f"\nNeptune Cluster:")
-        print(f"- VPC: {neptune_vpc_id}")
-        print("- Subnets:")
-        for subnet in neptune_subnet_ids:
-            print(f"  - {subnet['SubnetIdentifier']}")
-        
-        # Get SageMaker notebook instance details
-        notebook_name = os.environ.get('NOTEBOOK_NAME')
-        if not notebook_name:
-            print("\nCould not determine notebook instance name!")
+        # Get security groups
+        security_groups = []
+        for sg in cluster['VpcSecurityGroups']:
+            security_groups.append(sg['VpcSecurityGroupId'])
+            
+        if not security_groups:
+            print("No security groups found!")
             return False
             
-        notebook = sagemaker.describe_notebook_instance(
-            NotebookInstanceName=notebook_name
-        )
+        print(f"Found security groups: {security_groups}")
         
-        sagemaker_subnet_id = notebook.get('SubnetId')
-        if not sagemaker_subnet_id:
-            print("\nSageMaker notebook is not in a VPC!")
-            return False
+        # Update each security group
+        ec2 = boto3.client('ec2')
+        for sg_id in security_groups:
+            print(f"\nChecking security group: {sg_id}")
             
-        # Get subnet details
-        subnet = ec2.describe_subnets(SubnetIds=[sagemaker_subnet_id])['Subnets'][0]
-        sagemaker_vpc_id = subnet['VpcId']
-        
-        print(f"\nSageMaker Notebook:")
-        print(f"- VPC: {sagemaker_vpc_id}")
-        print(f"- Subnet: {sagemaker_subnet_id}")
-        
-        if sagemaker_vpc_id != neptune_vpc_id:
-            print("\nError: SageMaker and Neptune are in different VPCs!")
-            print("They must be in the same VPC to communicate using private IPs.")
-            return False
+            # Check if rule already exists
+            sg = ec2.describe_security_groups(GroupIds=[sg_id])['SecurityGroups'][0]
+            rule_exists = False
             
-        # Check route tables
-        route_tables = ec2.describe_route_tables(
-            Filters=[
-                {'Name': 'vpc-id', 'Values': [sagemaker_vpc_id]},
-                {'Name': 'association.subnet-id', 'Values': [sagemaker_subnet_id]}
-            ]
-        )['RouteTables']
-        
-        if not route_tables:
-            print("\nNo route table found for SageMaker subnet!")
-            return False
+            for rule in sg.get('IpPermissions', []):
+                if rule.get('FromPort', 0) <= 8182 <= rule.get('ToPort', 0):
+                    for ip_range in rule.get('IpRanges', []):
+                        if ip_range['CidrIp'] == cidr_block:
+                            print(f"Rule already exists for {cidr_block}")
+                            rule_exists = True
+                            break
+                    if rule_exists:
+                        break
             
-        route_table = route_tables[0]
-        print(f"\nRoute Table ({route_table['RouteTableId']}):")
-        for route in route_table['Routes']:
-            print(f"- {route.get('DestinationCidrBlock', 'Unknown')} -> {route.get('GatewayId', route.get('NatGatewayId', 'Unknown'))}")
+            if not rule_exists:
+                print(f"Adding rule for {cidr_block}...")
+                ec2.authorize_security_group_ingress(
+                    GroupId=sg_id,
+                    IpPermissions=[{
+                        'FromPort': 8182,
+                        'ToPort': 8182,
+                        'IpProtocol': 'tcp',
+                        'IpRanges': [{
+                            'CidrIp': cidr_block,
+                            'Description': 'SageMaker access'
+                        }]
+                    }]
+                )
+                print("Rule added successfully")
         
-        # Check if route table has route to Neptune subnet
-        neptune_subnet = ec2.describe_subnets(
-            SubnetIds=[neptune_subnet_ids[0]['SubnetIdentifier']]
-        )['Subnets'][0]
-        neptune_cidr = neptune_subnet['CidrBlock']
-        
-        has_route = False
-        for route in route_table['Routes']:
-            if route.get('DestinationCidrBlock') == neptune_cidr:
-                has_route = True
-                break
-                
-        if not has_route:
-            print(f"\nNo route found from SageMaker subnet to Neptune subnet ({neptune_cidr})!")
-            print("Please check VPC route tables.")
-            return False
-            
-        print("\nVPC connectivity appears correct.")
         return True
         
     except Exception as e:
-        print(f"Error checking VPC connectivity: {str(e)}")
+        print(f"Error updating security group: {str(e)}")
         return False
 
 def test_network_connectivity(endpoint: str, port: int = 8182) -> bool:
@@ -186,16 +173,15 @@ def test_network_connectivity(endpoint: str, port: int = 8182) -> bool:
         sock = socket.create_connection((endpoint, port), timeout=10)
         sock.close()
         print("TCP connection successful")
+        return True
     except (socket.timeout, socket.error) as e:
         print(f"TCP connection failed: {e}")
-        print("\nThis suggests a network connectivity issue.")
+        print("\nThis suggests a security group issue.")
         print("Please check:")
-        print("1. SageMaker and Neptune are in the same VPC")
-        print("2. Route tables allow traffic between subnets")
-        print("3. Security groups allow port 8182")
+        print("1. Security group inbound rules allow port 8182")
+        print("2. Security group is attached to the Neptune cluster")
+        print("3. Your subnet CIDR is allowed in the security group")
         return False
-    
-    return True
 
 def test_connection():
     """Test Neptune connection."""
@@ -208,17 +194,20 @@ def test_connection():
     
     print(f"Database URL: {database_url}")
     
-    # Check VPC connectivity first
-    if not check_vpc_connectivity(CLUSTER_NAME):
-        print("\nVPC connectivity check failed!")
-        return False
-    
-    # Test network connectivity
-    if not test_network_connectivity(ENDPOINT, PORT):
-        print("\nNetwork connectivity test failed!")
-        return False
-    
     try:
+        # Get SageMaker subnet CIDR
+        subnet_cidr = get_sagemaker_subnet_cidr()
+        
+        # Update Neptune security group
+        if not update_neptune_security_group(CLUSTER_NAME, subnet_cidr):
+            print("\nFailed to update security group!")
+            return False
+        
+        # Test network connectivity
+        if not test_network_connectivity(ENDPOINT, PORT):
+            print("\nNetwork connectivity test failed!")
+            return False
+        
         # Get AWS credentials
         print("\nGetting AWS credentials...")
         creds = boto3.Session().get_credentials().get_frozen_credentials()
