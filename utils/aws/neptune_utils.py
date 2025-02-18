@@ -306,6 +306,154 @@ class NeptuneManager:
                 self._log("Waiting for DNS propagation...")
                 time.sleep(10)  # Check every 10 seconds
     
+    def _cleanup_vpc(self, vpc_id: str) -> None:
+        """Clean up all resources in a VPC."""
+        try:
+            # Delete internet gateways
+            igws = self.ec2.describe_internet_gateways(
+                Filters=[{'Name': 'attachment.vpc-id', 'Values': [vpc_id]}]
+            )
+            for igw in igws['InternetGateways']:
+                self._log(f"Detaching and deleting internet gateway: {igw['InternetGatewayId']}")
+                self.ec2.detach_internet_gateway(
+                    InternetGatewayId=igw['InternetGatewayId'],
+                    VpcId=vpc_id
+                )
+                self.ec2.delete_internet_gateway(
+                    InternetGatewayId=igw['InternetGatewayId']
+                )
+            
+            # Delete subnets
+            subnets = self.ec2.describe_subnets(
+                Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}]
+            )
+            for subnet in subnets['Subnets']:
+                self._log(f"Deleting subnet: {subnet['SubnetId']}")
+                self.ec2.delete_subnet(SubnetId=subnet['SubnetId'])
+            
+            # Delete route tables (except main)
+            route_tables = self.ec2.describe_route_tables(
+                Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}]
+            )
+            for rt in route_tables['RouteTables']:
+                # Skip main route table
+                associations = rt.get('Associations', [])
+                if not any(assoc.get('Main', False) for assoc in associations):
+                    self._log(f"Deleting route table: {rt['RouteTableId']}")
+                    self.ec2.delete_route_table(RouteTableId=rt['RouteTableId'])
+            
+            # Delete security groups (except default)
+            security_groups = self.ec2.describe_security_groups(
+                Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}]
+            )
+            for sg in security_groups['SecurityGroups']:
+                if sg['GroupName'] != 'default':
+                    self._log(f"Deleting security group: {sg['GroupId']}")
+                    self.ec2.delete_security_group(GroupId=sg['GroupId'])
+            
+            # Delete VPC
+            self._log(f"Deleting VPC: {vpc_id}")
+            self.ec2.delete_vpc(VpcId=vpc_id)
+            
+        except Exception as e:
+            self._log(f"Error cleaning up VPC: {str(e)}")
+            raise
+    
+    def _cleanup_existing_resources(self) -> None:
+        """Clean up any existing resources with our name prefix."""
+        try:
+            # Find and delete existing cluster
+            try:
+                response = self.neptune.describe_db_clusters(
+                    DBClusterIdentifier=self.cluster_name
+                )
+                if response['DBClusters']:
+                    cluster = response['DBClusters'][0]
+                    
+                    # Delete instances first
+                    for member in cluster['DBClusterMembers']:
+                        instance_id = member['DBInstanceIdentifier']
+                        self._log(f"Deleting instance: {instance_id}")
+                        self.neptune.delete_db_instance(
+                            DBInstanceIdentifier=instance_id,
+                            SkipFinalSnapshot=True
+                        )
+                        
+                        # Wait for instance deletion
+                        start_time = time.time()
+                        while True:
+                            try:
+                                self.neptune.describe_db_instances(
+                                    DBInstanceIdentifier=instance_id
+                                )
+                                if time.time() - start_time > 1800:  # 30 minutes
+                                    raise Exception(f"Timeout waiting for instance deletion: {instance_id}")
+                                time.sleep(30)
+                            except ClientError as e:
+                                if e.response['Error']['Code'] == 'DBInstanceNotFound':
+                                    break
+                                raise
+                    
+                    # Delete cluster
+                    self._log(f"Deleting cluster: {self.cluster_name}")
+                    self.neptune.delete_db_cluster(
+                        DBClusterIdentifier=self.cluster_name,
+                        SkipFinalSnapshot=True
+                    )
+                    
+                    # Wait for cluster deletion
+                    start_time = time.time()
+                    while True:
+                        try:
+                            self.neptune.describe_db_clusters(
+                                DBClusterIdentifier=self.cluster_name
+                            )
+                            if time.time() - start_time > 1800:  # 30 minutes
+                                raise Exception(f"Timeout waiting for cluster deletion: {self.cluster_name}")
+                            time.sleep(30)
+                        except ClientError as e:
+                            if e.response['Error']['Code'] == 'DBClusterNotFoundFault':
+                                break
+                            raise
+            except ClientError as e:
+                if e.response['Error']['Code'] != 'DBClusterNotFoundFault':
+                    raise
+            
+            # Find and delete VPC with our name
+            vpcs = self.ec2.describe_vpcs(
+                Filters=[{
+                    'Name': 'tag:Name',
+                    'Values': [f'{self.cluster_name}-vpc']
+                }]
+            )
+            for vpc in vpcs['Vpcs']:
+                self._cleanup_vpc(vpc['VpcId'])
+            
+            # Delete parameter group
+            try:
+                self._log(f"Deleting parameter group: {self.param_group_name}")
+                self.neptune.delete_db_cluster_parameter_group(
+                    DBClusterParameterGroupName=self.param_group_name
+                )
+            except ClientError as e:
+                if e.response['Error']['Code'] != 'DBParameterGroupNotFound':
+                    raise
+            
+            # Delete subnet group
+            try:
+                subnet_group_name = f"{self.cluster_name}-subnet-group"
+                self._log(f"Deleting subnet group: {subnet_group_name}")
+                self.neptune.delete_db_subnet_group(
+                    DBSubnetGroupName=subnet_group_name
+                )
+            except ClientError as e:
+                if e.response['Error']['Code'] != 'DBSubnetGroupNotFoundFault':
+                    raise
+                    
+        except Exception as e:
+            self._log(f"Error cleaning up existing resources: {str(e)}")
+            raise
+    
     def setup_cluster(self) -> str:
         """
         Set up Neptune cluster and return endpoint.
@@ -314,18 +462,9 @@ class NeptuneManager:
             Neptune cluster endpoint
         """
         try:
-            # Delete existing cluster if it exists
-            try:
-                self._log(f"Checking for existing cluster: {self.cluster_name}")
-                response = self.neptune.describe_db_clusters(
-                    DBClusterIdentifier=self.cluster_name
-                )
-                if response['DBClusters']:
-                    self._log("Found existing cluster, cleaning up...")
-                    self.cleanup()
-            except ClientError as e:
-                if e.response['Error']['Code'] != 'DBClusterNotFoundFault':
-                    raise
+            # Clean up any existing resources first
+            self._log("Cleaning up any existing resources...")
+            self._cleanup_existing_resources()
             
             # Create VPC infrastructure
             self._log("Setting up VPC...")
@@ -475,47 +614,9 @@ class NeptuneManager:
                     if e.response['Error']['Code'] != 'DBSubnetGroupNotFoundFault':
                         raise
                 
-                # Delete security group
-                if self.security_group_id:
-                    self._log(f"Deleting security group: {self.security_group_id}")
-                    try:
-                        self.ec2.delete_security_group(GroupId=self.security_group_id)
-                    except ClientError as e:
-                        if e.response['Error']['Code'] != 'InvalidGroup.NotFound':
-                            raise
-                
-                # Delete VPC resources
+                # Clean up VPC resources
                 if self.vpc_id:
-                    # Delete internet gateway
-                    self._log("Deleting internet gateway...")
-                    igws = self.ec2.describe_internet_gateways(
-                        Filters=[{'Name': 'attachment.vpc-id', 'Values': [self.vpc_id]}]
-                    )
-                    for igw in igws['InternetGateways']:
-                        self.ec2.detach_internet_gateway(
-                            InternetGatewayId=igw['InternetGatewayId'],
-                            VpcId=self.vpc_id
-                        )
-                        self.ec2.delete_internet_gateway(
-                            InternetGatewayId=igw['InternetGatewayId']
-                        )
-                    
-                    # Delete subnets
-                    for subnet_id in self.subnet_ids:
-                        self._log(f"Deleting subnet: {subnet_id}")
-                        try:
-                            self.ec2.delete_subnet(SubnetId=subnet_id)
-                        except ClientError as e:
-                            if e.response['Error']['Code'] != 'InvalidSubnetID.NotFound':
-                                raise
-                    
-                    # Delete VPC
-                    self._log(f"Deleting VPC: {self.vpc_id}")
-                    try:
-                        self.ec2.delete_vpc(VpcId=self.vpc_id)
-                    except ClientError as e:
-                        if e.response['Error']['Code'] != 'InvalidVpcID.NotFound':
-                            raise
+                    self._cleanup_vpc(self.vpc_id)
                 
                 self._log("Cleanup complete")
                 
