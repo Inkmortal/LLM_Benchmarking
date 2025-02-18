@@ -69,6 +69,36 @@ def get_current_ip():
     except:
         return None
 
+def wait_for_cluster_available(neptune, cluster_name: str, timeout: int = 300) -> bool:
+    """Wait for cluster to be available."""
+    print("Waiting for cluster to be available...")
+    start_time = time.time()
+    
+    while True:
+        try:
+            response = neptune.describe_db_clusters(
+                DBClusterIdentifier=cluster_name
+            )
+            status = response['DBClusters'][0]['Status']
+            
+            if status == 'available':
+                print("Cluster is available")
+                return True
+            elif status in ['failed', 'deleting', 'stopped']:
+                print(f"Cluster is in {status} state")
+                return False
+                
+            if time.time() - start_time > timeout:
+                print(f"Timeout waiting for cluster (waited {timeout} seconds)")
+                return False
+                
+            print(f"Cluster status: {status}, waiting...")
+            time.sleep(10)
+            
+        except Exception as e:
+            print(f"Error checking cluster status: {str(e)}")
+            return False
+
 def update_cluster_security_group(cluster_name: str, current_ip: str = None) -> bool:
     """Update Neptune cluster security group to allow access."""
     print(f"\nUpdating Neptune cluster {cluster_name} security group...")
@@ -135,12 +165,9 @@ def update_cluster_security_group(cluster_name: str, current_ip: str = None) -> 
         )
         
         # Wait for the change to take effect
-        print("Waiting for security group update to take effect...")
-        waiter = neptune.get_waiter('db_cluster_available')
-        waiter.wait(
-            DBClusterIdentifier=cluster_name,
-            WaiterConfig={'Delay': 5, 'MaxAttempts': 60}
-        )
+        if not wait_for_cluster_available(neptune, cluster_name):
+            print("Failed to update cluster security groups")
+            return False
         
         print("Security group updated successfully")
         return True
