@@ -69,84 +69,15 @@ def get_current_ip():
     except:
         return None
 
-def wait_for_cluster_available(neptune, cluster_name: str, timeout: int = 300) -> bool:
-    """Wait for cluster to be available."""
-    print("Waiting for cluster to be available...")
-    start_time = time.time()
-    
-    while True:
-        try:
-            response = neptune.describe_db_clusters(
-                DBClusterIdentifier=cluster_name
-            )
-            status = response['DBClusters'][0]['Status']
-            
-            if status == 'available':
-                print("Cluster is available")
-                return True
-            elif status in ['failed', 'deleting', 'stopped']:
-                print(f"Cluster is in {status} state")
-                return False
-                
-            if time.time() - start_time > timeout:
-                print(f"Timeout waiting for cluster (waited {timeout} seconds)")
-                return False
-                
-            print(f"Cluster status: {status}, waiting...")
-            time.sleep(10)
-            
-        except Exception as e:
-            print(f"Error checking cluster status: {str(e)}")
-            return False
-
-def update_security_group(sg_id: str, current_ip: str) -> bool:
-    """Update security group to allow access."""
-    print(f"\nUpdating security group {sg_id}...")
-    
-    try:
-        ec2 = boto3.client('ec2')
-        
-        # Get current security group rules
-        sg = ec2.describe_security_groups(GroupIds=[sg_id])['SecurityGroups'][0]
-        
-        # Check if rule already exists
-        for rule in sg.get('IpPermissions', []):
-            if rule.get('FromPort', 0) <= 8182 <= rule.get('ToPort', 0):
-                for ip_range in rule.get('IpRanges', []):
-                    if ip_range['CidrIp'] == f"{current_ip}/32":
-                        print(f"Rule already exists for {current_ip}/32")
-                        return True
-        
-        # Add inbound rule
-        print(f"Adding rule for IP {current_ip}...")
-        ec2.authorize_security_group_ingress(
-            GroupId=sg_id,
-            IpPermissions=[{
-                'FromPort': 8182,
-                'ToPort': 8182,
-                'IpProtocol': 'tcp',
-                'IpRanges': [{
-                    'CidrIp': f"{current_ip}/32",
-                    'Description': 'Neptune access'
-                }]
-            }]
-        )
-        
-        print("Security group updated successfully")
-        return True
-        
-    except Exception as e:
-        print(f"Error updating security group: {str(e)}")
-        return False
-
-def check_security_groups(cluster_name: str, auto_update: bool = True) -> bool:
-    """Check Neptune security group settings."""
-    print("\nChecking Neptune security group settings...")
+def check_vpc_connectivity(cluster_name: str) -> bool:
+    """Check VPC connectivity between SageMaker and Neptune."""
+    print("\nChecking VPC connectivity...")
     
     try:
         # Get Neptune cluster details
         neptune = boto3.client('neptune')
         ec2 = boto3.client('ec2')
+        sagemaker = boto3.client('sagemaker')
         
         # Get cluster info
         clusters = neptune.describe_db_clusters(
@@ -158,78 +89,82 @@ def check_security_groups(cluster_name: str, auto_update: bool = True) -> bool:
             return False
             
         cluster = clusters['DBClusters'][0]
-        vpc_security_groups = cluster['VpcSecurityGroups']
+        neptune_vpc_id = cluster['VpcSecurityGroups'][0]['VpcId']
+        neptune_subnet_ids = cluster['DBSubnetGroup']['Subnets']
         
-        print(f"\nCluster VPC Security Groups:")
+        print(f"\nNeptune Cluster:")
+        print(f"- VPC: {neptune_vpc_id}")
+        print("- Subnets:")
+        for subnet in neptune_subnet_ids:
+            print(f"  - {subnet['SubnetIdentifier']}")
         
-        # Get current instance security groups if running on EC2
-        instance_info = get_instance_identity()
-        instance_security_groups = []
-        if instance_info:
-            instance_security_groups = instance_info.get('SecurityGroups', [])
-            print("\nCurrent Instance Security Groups:")
-            for sg in instance_security_groups:
-                print(f"- {sg['GroupName']} ({sg['GroupId']})")
-        else:
-            print("\nNot running on EC2 - will use public IP for access")
-            current_ip = get_current_ip()
-            if current_ip:
-                print(f"Current public IP: {current_ip}")
-            else:
-                print("Could not determine public IP")
-        
-        has_access = False
-        for vpc_sg in vpc_security_groups:
-            sg_id = vpc_sg['VpcSecurityGroupId']
-            
-            # Get security group details
-            sg_details = ec2.describe_security_groups(GroupIds=[sg_id])['SecurityGroups'][0]
-            
-            print(f"\nSecurity Group: {sg_details['GroupName']} ({sg_id})")
-            print("Inbound Rules:")
-            
-            # Check inbound rules
-            for rule in sg_details['IpPermissions']:
-                if rule.get('FromPort', 0) <= 8182 <= rule.get('ToPort', 0):
-                    for ip_range in rule.get('IpRanges', []):
-                        print(f"- {ip_range['CidrIp']} (TCP {rule['FromPort']}-{rule['ToPort']})")
-                        # If we're not on EC2, check if our IP is allowed
-                        if not instance_info:
-                            current_ip = get_current_ip()
-                            if current_ip and ip_range['CidrIp'] in [f"{current_ip}/32", "0.0.0.0/0"]:
-                                has_access = True
-                    for group in rule.get('UserIdGroupPairs', []):
-                        print(f"- Security Group: {group['GroupId']}")
-                        # Check if our instance's security group is allowed
-                        if instance_info and any(isg['GroupId'] == group['GroupId'] 
-                                               for isg in instance_security_groups):
-                            has_access = True
-                            print("  (Current instance's security group)")
-            
-            if not has_access and auto_update:
-                print("\nNo valid access rules found - attempting to add...")
-                if not instance_info:
-                    # Add current IP
-                    current_ip = get_current_ip()
-                    if current_ip and update_security_group(sg_id, current_ip):
-                        has_access = True
-            
-        if not has_access:
-            print("\nWarning: No valid inbound rules found for port 8182!")
-            print("Recommendations:")
-            print("1. Add inbound rule for port 8182 to Neptune's security group")
-            if instance_info:
-                print("2. Allow access from this instance's security group")
-                print("3. Or add CIDR range that includes this instance")
-            else:
-                print("2. Add CIDR range that includes your client IP")
+        # Get SageMaker notebook instance details
+        notebook_name = os.environ.get('NOTEBOOK_NAME')
+        if not notebook_name:
+            print("\nCould not determine notebook instance name!")
             return False
             
-        print("\nSecurity group configuration appears correct.")
+        notebook = sagemaker.describe_notebook_instance(
+            NotebookInstanceName=notebook_name
+        )
+        
+        sagemaker_subnet_id = notebook.get('SubnetId')
+        if not sagemaker_subnet_id:
+            print("\nSageMaker notebook is not in a VPC!")
+            return False
+            
+        # Get subnet details
+        subnet = ec2.describe_subnets(SubnetIds=[sagemaker_subnet_id])['Subnets'][0]
+        sagemaker_vpc_id = subnet['VpcId']
+        
+        print(f"\nSageMaker Notebook:")
+        print(f"- VPC: {sagemaker_vpc_id}")
+        print(f"- Subnet: {sagemaker_subnet_id}")
+        
+        if sagemaker_vpc_id != neptune_vpc_id:
+            print("\nError: SageMaker and Neptune are in different VPCs!")
+            print("They must be in the same VPC to communicate using private IPs.")
+            return False
+            
+        # Check route tables
+        route_tables = ec2.describe_route_tables(
+            Filters=[
+                {'Name': 'vpc-id', 'Values': [sagemaker_vpc_id]},
+                {'Name': 'association.subnet-id', 'Values': [sagemaker_subnet_id]}
+            ]
+        )['RouteTables']
+        
+        if not route_tables:
+            print("\nNo route table found for SageMaker subnet!")
+            return False
+            
+        route_table = route_tables[0]
+        print(f"\nRoute Table ({route_table['RouteTableId']}):")
+        for route in route_table['Routes']:
+            print(f"- {route.get('DestinationCidrBlock', 'Unknown')} -> {route.get('GatewayId', route.get('NatGatewayId', 'Unknown'))}")
+        
+        # Check if route table has route to Neptune subnet
+        neptune_subnet = ec2.describe_subnets(
+            SubnetIds=[neptune_subnet_ids[0]['SubnetIdentifier']]
+        )['Subnets'][0]
+        neptune_cidr = neptune_subnet['CidrBlock']
+        
+        has_route = False
+        for route in route_table['Routes']:
+            if route.get('DestinationCidrBlock') == neptune_cidr:
+                has_route = True
+                break
+                
+        if not has_route:
+            print(f"\nNo route found from SageMaker subnet to Neptune subnet ({neptune_cidr})!")
+            print("Please check VPC route tables.")
+            return False
+            
+        print("\nVPC connectivity appears correct.")
         return True
         
     except Exception as e:
-        print(f"Error checking security groups: {str(e)}")
+        print(f"Error checking VPC connectivity: {str(e)}")
         return False
 
 def test_network_connectivity(endpoint: str, port: int = 8182) -> bool:
@@ -253,11 +188,11 @@ def test_network_connectivity(endpoint: str, port: int = 8182) -> bool:
         print("TCP connection successful")
     except (socket.timeout, socket.error) as e:
         print(f"TCP connection failed: {e}")
-        print("\nThis suggests a security group issue.")
+        print("\nThis suggests a network connectivity issue.")
         print("Please check:")
-        print("1. Security group inbound rules allow port 8182")
-        print("2. Security group is attached to the Neptune cluster")
-        print("3. Your client (this machine) is allowed in the security group")
+        print("1. SageMaker and Neptune are in the same VPC")
+        print("2. Route tables allow traffic between subnets")
+        print("3. Security groups allow port 8182")
         return False
     
     return True
@@ -273,9 +208,9 @@ def test_connection():
     
     print(f"Database URL: {database_url}")
     
-    # Check security groups first
-    if not check_security_groups(CLUSTER_NAME, auto_update=True):
-        print("\nSecurity group check failed!")
+    # Check VPC connectivity first
+    if not check_vpc_connectivity(CLUSTER_NAME):
+        print("\nVPC connectivity check failed!")
         return False
     
     # Test network connectivity
