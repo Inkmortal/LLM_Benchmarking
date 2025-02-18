@@ -12,7 +12,8 @@ requests-aws4auth
 opensearch-py
 gremlinpython
 # Added for Neptune connectivity
-neptune-python-utils  
+git+https://github.com/awslabs/amazon-neptune-tools.git#subdirectory=neptune-python-utils
+
 # RAG and evaluation
 ragas
 llama-index
