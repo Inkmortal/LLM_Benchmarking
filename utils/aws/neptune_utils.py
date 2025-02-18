@@ -51,6 +51,8 @@ class NeptuneManager:
         self.vpc_id = None
         self.subnet_ids = []
         self.security_group_id = None
+        self.nat_gateway_id = None
+        self.eip_allocation_id = None
         
         # Get identity for IAM auth
         sts = boto3.client('sts')
@@ -67,7 +69,7 @@ class NeptuneManager:
     
     def _create_vpc(self) -> Tuple[str, List[str], str]:
         """
-        Create VPC with public subnets in multiple AZs for Neptune.
+        Create VPC with public and private subnets for Neptune.
         
         Returns:
             Tuple of (vpc_id, subnet_ids, security_group_id)
@@ -102,44 +104,101 @@ class NeptuneManager:
             
             # Get available AZs
             azs = self.ec2.describe_availability_zones()['AvailabilityZones']
-            subnet_ids = []
+            public_subnet_ids = []
+            private_subnet_ids = []
             
             # Create subnets in first 2 AZs
             for i, az in enumerate(azs[:2]):
-                self._log(f"Creating subnet in {az['ZoneName']}...")
-                subnet = self.ec2.create_subnet(
+                # Create public subnet
+                self._log(f"Creating public subnet in {az['ZoneName']}...")
+                public_subnet = self.ec2.create_subnet(
                     VpcId=vpc_id,
-                    CidrBlock=f'10.0.{i}.0/24',
+                    CidrBlock=f'10.0.{i*2}.0/24',
                     AvailabilityZone=az['ZoneName'],
                     TagSpecifications=[{
                         'ResourceType': 'subnet',
-                        'Tags': [{'Key': 'Name', 'Value': f'{self.cluster_name}-subnet-{i+1}'}]
+                        'Tags': [{'Key': 'Name', 'Value': f'{self.cluster_name}-public-{i+1}'}]
                     }]
                 )
-                subnet_ids.append(subnet['Subnet']['SubnetId'])
+                public_subnet_ids.append(public_subnet['Subnet']['SubnetId'])
                 
-                # Enable auto-assign public IP
+                # Enable auto-assign public IP for public subnet
                 self.ec2.modify_subnet_attribute(
-                    SubnetId=subnet['Subnet']['SubnetId'],
+                    SubnetId=public_subnet['Subnet']['SubnetId'],
                     MapPublicIpOnLaunch={'Value': True}
                 )
+                
+                # Create private subnet
+                self._log(f"Creating private subnet in {az['ZoneName']}...")
+                private_subnet = self.ec2.create_subnet(
+                    VpcId=vpc_id,
+                    CidrBlock=f'10.0.{i*2+1}.0/24',
+                    AvailabilityZone=az['ZoneName'],
+                    TagSpecifications=[{
+                        'ResourceType': 'subnet',
+                        'Tags': [{'Key': 'Name', 'Value': f'{self.cluster_name}-private-{i+1}'}]
+                    }]
+                )
+                private_subnet_ids.append(private_subnet['Subnet']['SubnetId'])
             
-            # Create route table
-            self._log("Configuring route table...")
-            route_table = self.ec2.create_route_table(VpcId=vpc_id)
-            route_table_id = route_table['RouteTable']['RouteTableId']
+            # Create public route table
+            self._log("Configuring public route table...")
+            public_rt = self.ec2.create_route_table(VpcId=vpc_id)
+            public_rt_id = public_rt['RouteTable']['RouteTableId']
             
             # Add route to internet
             self.ec2.create_route(
-                RouteTableId=route_table_id,
+                RouteTableId=public_rt_id,
                 DestinationCidrBlock='0.0.0.0/0',
                 GatewayId=igw_id
             )
             
-            # Associate route table with all subnets
-            for subnet_id in subnet_ids:
+            # Associate public route table with public subnets
+            for subnet_id in public_subnet_ids:
                 self.ec2.associate_route_table(
-                    RouteTableId=route_table_id,
+                    RouteTableId=public_rt_id,
+                    SubnetId=subnet_id
+                )
+            
+            # Create NAT Gateway
+            self._log("Creating NAT Gateway...")
+            eip = self.ec2.allocate_address(Domain='vpc')
+            self.eip_allocation_id = eip['AllocationId']
+            
+            nat_gateway = self.ec2.create_nat_gateway(
+                SubnetId=public_subnet_ids[0],  # Place in first public subnet
+                AllocationId=self.eip_allocation_id,
+                TagSpecifications=[{
+                    'ResourceType': 'natgateway',
+                    'Tags': [{'Key': 'Name', 'Value': f'{self.cluster_name}-nat'}]
+                }]
+            )
+            self.nat_gateway_id = nat_gateway['NatGateway']['NatGatewayId']
+            
+            # Wait for NAT Gateway to be available
+            self._log("Waiting for NAT Gateway to be available...")
+            waiter = self.ec2.get_waiter('nat_gateway_available')
+            waiter.wait(
+                NatGatewayIds=[self.nat_gateway_id],
+                WaiterConfig={'Delay': 30, 'MaxAttempts': 20}
+            )
+            
+            # Create private route table
+            self._log("Configuring private route table...")
+            private_rt = self.ec2.create_route_table(VpcId=vpc_id)
+            private_rt_id = private_rt['RouteTable']['RouteTableId']
+            
+            # Add route through NAT Gateway
+            self.ec2.create_route(
+                RouteTableId=private_rt_id,
+                DestinationCidrBlock='0.0.0.0/0',
+                NatGatewayId=self.nat_gateway_id
+            )
+            
+            # Associate private route table with private subnets
+            for subnet_id in private_subnet_ids:
+                self.ec2.associate_route_table(
+                    RouteTableId=private_rt_id,
                     SubnetId=subnet_id
                 )
             
@@ -166,12 +225,26 @@ class NeptuneManager:
                 }]
             )
             
+            # Add outbound rule for all traffic
+            self.ec2.authorize_security_group_egress(
+                GroupId=security_group_id,
+                IpPermissions=[{
+                    'IpProtocol': '-1',  # All protocols
+                    'FromPort': -1,      # All ports
+                    'ToPort': -1,
+                    'IpRanges': [{
+                        'CidrIp': '0.0.0.0/0',
+                        'Description': 'Allow all outbound traffic'
+                    }]
+                }]
+            )
+            
             # Store IDs for cleanup
             self.vpc_id = vpc_id
-            self.subnet_ids = subnet_ids
+            self.subnet_ids = private_subnet_ids  # Use private subnets for Neptune
             self.security_group_id = security_group_id
             
-            return vpc_id, subnet_ids, security_group_id
+            return vpc_id, private_subnet_ids, security_group_id
             
         except Exception as e:
             self._log(f"Error creating VPC: {str(e)}")
@@ -309,6 +382,29 @@ class NeptuneManager:
     def _cleanup_vpc(self, vpc_id: str) -> None:
         """Clean up all resources in a VPC."""
         try:
+            # Delete NAT Gateway first
+            nat_gateways = self.ec2.describe_nat_gateways(
+                Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}]
+            )
+            for nat in nat_gateways['NatGateways']:
+                if nat['State'] not in ['deleted', 'deleting']:
+                    self._log(f"Deleting NAT Gateway: {nat['NatGatewayId']}")
+                    self.ec2.delete_nat_gateway(NatGatewayId=nat['NatGatewayId'])
+                    
+                    # Wait for NAT Gateway to be deleted
+                    while True:
+                        response = self.ec2.describe_nat_gateways(
+                            NatGatewayIds=[nat['NatGatewayId']]
+                        )
+                        if response['NatGateways'][0]['State'] == 'deleted':
+                            break
+                        time.sleep(30)
+            
+            # Release Elastic IPs
+            if self.eip_allocation_id:
+                self._log(f"Releasing Elastic IP: {self.eip_allocation_id}")
+                self.ec2.release_address(AllocationId=self.eip_allocation_id)
+            
             # Delete internet gateways
             igws = self.ec2.describe_internet_gateways(
                 Filters=[{'Name': 'attachment.vpc-id', 'Values': [vpc_id]}]
@@ -695,176 +791,3 @@ class NeptuneGraph:
     
     def close(self):
         """Close all connections."""
-        if self.connection:
-            self.connection.close()
-            self.connection = None
-    
-    def add_vertex(
-        self,
-        label: str,
-        properties: Dict[str, Any],
-        id: Optional[str] = None
-    ) -> str:
-        """
-        Add vertex to graph.
-        
-        Args:
-            label: Vertex label
-            properties: Vertex properties
-            id: Optional vertex ID
-            
-        Returns:
-            Vertex ID
-        """
-        if not self.g:
-            raise RuntimeError("Graph connection not initialized")
-            
-        if id:
-            vertex = self.g.addV(label).property('id', id)
-        else:
-            vertex = self.g.addV(label)
-            
-        for key, value in properties.items():
-            vertex = vertex.property(key, value)
-            
-        result = vertex.next()
-        return result.id
-    
-    def add_edge(
-        self,
-        from_id: str,
-        to_id: str,
-        label: str,
-        properties: Optional[Dict[str, Any]] = None
-    ) -> str:
-        """
-        Add edge between vertices.
-        
-        Args:
-            from_id: Source vertex ID
-            to_id: Target vertex ID
-            label: Edge label
-            properties: Optional edge properties
-            
-        Returns:
-            Edge ID
-        """
-        if not self.g:
-            raise RuntimeError("Graph connection not initialized")
-            
-        edge = self.g.V(from_id).addE(label).to(self.g.V(to_id))
-        
-        if properties:
-            for key, value in properties.items():
-                edge = edge.property(key, value)
-                
-        result = edge.next()
-        return result.id
-    
-    def get_vertices(
-        self,
-        label: Optional[str] = None,
-        properties: Optional[Dict[str, Any]] = None,
-        limit: Optional[int] = None
-    ) -> List[Dict[str, Any]]:
-        """
-        Get vertices matching criteria.
-        
-        Args:
-            label: Optional vertex label to filter by
-            properties: Optional property values to filter by
-            limit: Optional maximum number of results
-            
-        Returns:
-            List of vertex data
-        """
-        if not self.g:
-            raise RuntimeError("Graph connection not initialized")
-            
-        if label:
-            query = self.g.V().hasLabel(label)
-        else:
-            query = self.g.V()
-            
-        if properties:
-            for key, value in properties.items():
-                query = query.has(key, value)
-                
-        if limit:
-            query = query.limit(limit)
-            
-        results = query.valueMap(True).toList()
-        return results
-    
-    def get_edges(
-        self,
-        label: Optional[str] = None,
-        properties: Optional[Dict[str, Any]] = None,
-        limit: Optional[int] = None
-    ) -> List[Dict[str, Any]]:
-        """
-        Get edges matching criteria.
-        
-        Args:
-            label: Optional edge label to filter by
-            properties: Optional property values to filter by
-            limit: Optional maximum number of results
-            
-        Returns:
-            List of edge data
-        """
-        if not self.g:
-            raise RuntimeError("Graph connection not initialized")
-            
-        if label:
-            query = self.g.E().hasLabel(label)
-        else:
-            query = self.g.E()
-            
-        if properties:
-            for key, value in properties.items():
-                query = query.has(key, value)
-                
-        if limit:
-            query = query.limit(limit)
-            
-        results = query.valueMap(True).toList()
-        return results
-    
-    def get_neighbors(
-        self,
-        vertex_id: str,
-        direction: str = 'both',
-        edge_label: Optional[str] = None,
-        limit: Optional[int] = None
-    ) -> List[Dict[str, Any]]:
-        """
-        Get neighboring vertices.
-        
-        Args:
-            vertex_id: ID of vertex to get neighbors for
-            direction: 'in', 'out', or 'both'
-            edge_label: Optional edge label to filter by
-            limit: Optional maximum number of results
-            
-        Returns:
-            List of neighbor data
-        """
-        if not self.g:
-            raise RuntimeError("Graph connection not initialized")
-            
-        if direction == 'in':
-            query = self.g.V(vertex_id).in_()
-        elif direction == 'out':
-            query = self.g.V(vertex_id).out()
-        else:
-            query = self.g.V(vertex_id).both()
-            
-        if edge_label:
-            query = query.hasLabel(edge_label)
-            
-        if limit:
-            query = query.limit(limit)
-            
-        results = query.valueMap(True).toList()
-        return results
