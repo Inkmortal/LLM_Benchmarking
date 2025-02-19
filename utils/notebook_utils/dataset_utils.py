@@ -4,8 +4,9 @@ import json
 import shutil
 from pathlib import Path
 from typing import Dict, Any, Tuple, List, Optional
-from llama_index.core.llama_dataset import LabelledRagDataset, download_llama_dataset
-from llama_index.core import SimpleDirectoryReader
+from llama_index.llama_dataset import LabelledRagDataset, download_llama_dataset
+from llama_index import SimpleDirectoryReader
+from ragas import SingleTurnSample, EvaluationDataset
 
 DATASET_REGISTRY = {
     'OriginOfCovid19Dataset': {
@@ -165,3 +166,25 @@ def save_dataset_info(dataset_info: Dict[str, Any], output_path: Path) -> None:
     """
     with open(output_path, 'w', encoding='utf-8') as f:
         json.dump(dataset_info, f, indent=2)
+
+def convert_to_ragas_dataset(llama_dataset: LabelledRagDataset, contexts: List[str]) -> EvaluationDataset:
+    """Convert a LlamaIndex dataset to a RAGAs evaluation dataset.
+    
+    Args:
+        llama_dataset: LlamaIndex LabelledRagDataset
+        contexts: List of retrieved contexts for each query
+        
+    Returns:
+        RAGAs EvaluationDataset
+    """
+    samples = []
+    for example in llama_dataset.examples:
+        sample = SingleTurnSample(
+            user_input=example.query,
+            retrieved_contexts=contexts,
+            response=example.reference_answer,  # Using reference as response for now
+            reference=example.reference_answer
+        )
+        samples.append(sample)
+    
+    return EvaluationDataset(samples=samples)
