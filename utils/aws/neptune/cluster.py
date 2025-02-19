@@ -34,10 +34,20 @@ class ClusterManager:
             
             fixed = True
             
-            # Check IAM auth
-            if not cluster['EnableIAMDatabaseAuthentication']:
-                self._log("IAM auth disabled, cannot fix without recreation")
-                fixed = False
+            # Check and enable IAM auth if needed
+            if not cluster.get('EnableIAMDatabaseAuthentication', False):
+                self._log("Enabling IAM authentication...")
+                try:
+                    self.neptune.modify_db_cluster(
+                        DBClusterIdentifier=cluster_id,
+                        ApplyImmediately=True,
+                        EnableIAMDatabaseAuthentication=True
+                    )
+                    # Wait for modification to complete
+                    self._wait_for_cluster(cluster_id)
+                except Exception as e:
+                    self._log(f"Error enabling IAM auth: {str(e)}")
+                    fixed = False
             
             # Check parameter group
             if cluster['DBClusterParameterGroup'] != self.param_group_name:
@@ -151,14 +161,19 @@ class ClusterManager:
             if not subnet_group_name:
                 subnet_group_name = f"{self.cluster_name}-subnet-group"
                 
+            # Check if subnet group exists first
             try:
-                self.neptune.create_db_subnet_group(
-                    DBSubnetGroupName=subnet_group_name,
-                    DBSubnetGroupDescription=f'Subnet group for {self.cluster_name}',
-                    SubnetIds=subnet_ids
-                )
+                self.neptune.describe_db_subnet_groups(DBSubnetGroupName=subnet_group_name)
+                self._log(f"Using existing subnet group: {subnet_group_name}")
             except ClientError as e:
-                if e.response['Error']['Code'] != 'DBSubnetGroupAlreadyExistsFault':
+                if e.response['Error']['Code'] == 'DBSubnetGroupNotFoundFault':
+                    self._log(f"Creating subnet group: {subnet_group_name}")
+                    self.neptune.create_db_subnet_group(
+                        DBSubnetGroupName=subnet_group_name,
+                        DBSubnetGroupDescription=f'Subnet group for {self.cluster_name}',
+                        SubnetIds=subnet_ids
+                    )
+                else:
                     raise
             
             # Create cluster with serverless configuration
