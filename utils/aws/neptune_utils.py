@@ -41,8 +41,8 @@ class NeptuneManager:
         self.cleanup_enabled = cleanup_enabled
         self.verbose = verbose
         
-        # Initialize session
-        self.session = session or boto3.Session(profile_name='Demo', region_name=region)
+        # Initialize session - use instance role by default
+        self.session = session or boto3.Session(region_name=region)
         
         # Initialize AWS clients
         self.neptune = self.session.client('neptune')
@@ -749,7 +749,8 @@ class NeptuneGraph:
         self.endpoint = endpoint
         self.max_retries = max_retries
         self.retry_delay = retry_delay
-        self.session = session or boto3.Session(profile_name='Demo')
+        # Initialize session - use instance role by default
+        self.session = session or boto3.Session()
         
         # Initialize connection state
         self.connection = None
