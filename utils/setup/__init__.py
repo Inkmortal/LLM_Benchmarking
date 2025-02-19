@@ -6,6 +6,54 @@ import pkg_resources
 from pathlib import Path
 from tqdm import tqdm
 
+def install_spacy():
+    """Install spacy and its dependencies separately."""
+    print("📦 Installing spacy and dependencies...")
+    try:
+        # Install spacy core dependencies first
+        dependencies = [
+            "wasabi>=0.9.1",
+            "srsly>=2.4.3",
+            "catalogue>=2.0.6",
+            "typer>=0.3.0",
+            "pathy>=0.3.5",
+            "smart-open>=5.2.1",
+            "murmurhash>=1.0.2",
+            "cymem>=2.0.2",
+            "preshed>=3.0.2",
+            "thinc>=8.1.0"
+        ]
+        
+        for dep in dependencies:
+            result = subprocess.run(
+                [sys.executable, '-m', 'pip', 'install', '--progress-bar', 'off', dep],
+                capture_output=True,
+                text=True
+            )
+            if result.returncode != 0:
+                print(f"\n❌ Failed to install spacy dependency {dep}:")
+                print(result.stderr)
+                return False
+                
+        # Now install spacy
+        result = subprocess.run(
+            [sys.executable, '-m', 'pip', 'install', '--progress-bar', 'off', 'spacy==3.7.2'],
+            capture_output=True,
+            text=True
+        )
+        
+        if result.returncode != 0:
+            print("\n❌ Failed to install spacy:")
+            print(result.stderr)
+            return False
+            
+        print("✅ Successfully installed spacy and dependencies!")
+        return True
+        
+    except Exception as e:
+        print(f"\n❌ Failed to install spacy: {str(e)}")
+        return False
+
 def install_requirements(requirements_file: str):
     """Install packages from requirements file if not already installed."""
     print("[DEBUG] Starting install_requirements function")
@@ -14,7 +62,13 @@ def install_requirements(requirements_file: str):
     
     print(f"[DEBUG] Found {len(requirements)} requirements in file")
     installed = {pkg.key for pkg in pkg_resources.working_set}
-    missing = [pkg for pkg in requirements if pkg.split('==')[0] not in installed]
+    
+    # Filter out spacy and its dependencies as we'll handle them separately
+    spacy_deps = {'spacy', 'wasabi', 'srsly', 'catalogue', 'typer', 'pathy', 
+                 'smart-open', 'murmurhash', 'cymem', 'preshed', 'thinc'}
+    missing = [pkg for pkg in requirements 
+              if pkg.split('==')[0] not in installed 
+              and pkg.split('==')[0] not in spacy_deps]
     
     if missing:
         print("📦 Installing missing packages...")
@@ -50,6 +104,10 @@ def install_requirements(requirements_file: str):
                     print(f"\n❌ Installation failed for {package}: {str(e)}")
                     print("[DEBUG] Returning False due to exception")
                     return False
+        
+        # After installing other packages, handle spacy separately
+        if not install_spacy():
+            return False
         
         print("\n📦 Successfully installed all missing packages!")
         print("[DEBUG] Returning True after installing packages")

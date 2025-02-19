@@ -2,89 +2,101 @@
 
 ## Current Focus: AWS Service Connectivity
 
-### OpenSearch Connection Issues
-1. Domain Name Management
-   - Keep domain names short and consistent
-   - Use fixed names for benchmarking (e.g., "rag-bench")
-   - Check for existing domains before creating new ones
+### Neptune Connection Strategy
+1. Infrastructure Management
+   - Always validate before modifying
+   - Fix configurations when possible
+   - Only cleanup as last resort
+   - Require explicit cleanup flag
 
-2. Authentication
-   - Must use AWS4Auth with proper credentials
-   - Requires RequestsHttpConnection class
-   - Need proper SSL settings
+2. Resource Validation
+   - Check VPC configuration first
+   - Validate security groups and routes
+   - Verify DNS and NAT Gateway
+   - Test connectivity end-to-end
 
-3. DNS Resolution
-   - Wait for DNS propagation after domain creation
-   - Check DNS resolution explicitly
-   - Handle connection retries properly
+3. SageMaker Integration
+   - Notebook instance stability issues
+   - Git repo persistence concerns
+   - Kernel restart handling
+   - Connection recovery patterns
 
-### Neptune Connection Issues
+### Connection Issues
 1. Current Status
-   - Still experiencing connection issues
-   - Cluster and instance are created successfully
-   - Connection fails even with proper setup
+   - Infrastructure validation improved
+   - Fix-first approach implemented
+   - Cleanup requires confirmation
+   - Better error reporting
 
 2. Potential Issues
-   - DNS propagation timing
-   - Event loop/async handling
-   - Connection pooling settings
-   - IAM auth configuration
+   - Notebook instance stability
+   - Git repo persistence
+   - Kernel connection handling
+   - Resource state tracking
 
-3. Next Steps to Investigate
-   - Review Neptune connection logs
-   - Check IAM permissions
-   - Test with different connection settings
-   - Consider synchronous alternatives
+3. Next Steps
+   - Use CLI script over notebook
+   - Improve state persistence
+   - Add connection recovery
+   - Better error logging
 
 ## Recent Changes
 
-### OpenSearch Integration
-1. Simplified domain management:
-   - Using consistent "rag-bench" domain name
-   - Added domain existence check
-   - Proper cleanup handling
-
-2. Improved auth handling:
-   - Added AWS4Auth setup
-   - Using RequestsHttpConnection
-   - Proper SSL configuration
-
 ### Neptune Integration
-1. Current challenges:
-   - Connection failures after successful creation
-   - Need to investigate timing/async issues
-   - May need to simplify connection logic
+1. Infrastructure Management:
+   - Added configuration validation
+   - Implemented fix-first approach
+   - Removed automatic cleanup
+   - Added cleanup confirmation
+
+2. Connection Handling:
+   - Better DNS validation
+   - Improved route checking
+   - Security group validation
+   - Connection testing
+
+3. SageMaker Integration:
+   - CLI script for reliability
+   - State persistence fixes
+   - Better error handling
+   - Recovery procedures
 
 ## Active Decisions
 
-1. Domain Naming
-   - Use consistent, short names
-   - Avoid dynamic/hashed names
-   - Reuse domains when possible
+1. Resource Management
+   - Validate before modifying
+   - Fix configurations first
+   - Cleanup as last resort
+   - Require explicit cleanup
 
-2. Resource Management
-   - Check for existing resources first
-   - Handle cleanup carefully
-   - Prevent cleanup cascades
+2. Testing Strategy
+   - Use CLI script primarily
+   - Notebook as secondary option
+   - Better state tracking
+   - Improved error reporting
 
-3. Connection Strategy
-   - Handle DNS propagation explicitly
-   - Use proper auth mechanisms
-   - Implement robust retry logic
+3. Connection Pattern
+   - Validate infrastructure
+   - Fix configurations
+   - Test connectivity
+   - Handle failures gracefully
 
 ## Next Steps
 
-1. Neptune Connection
-   - Debug connection failures
-   - Review async implementation
-   - Consider simpler connection pattern
+1. Infrastructure
+   - Improve validation
+   - Add configuration fixes
+   - Better cleanup handling
+   - State persistence
 
 2. Testing
-   - Add connection validation
-   - Improve error handling
-   - Add detailed logging
+   - Enhance CLI script
+   - Add connection recovery
+   - Improve error logging
+   - Better state tracking
 
 3. Documentation
-   - Document connection patterns
-   - Note timing considerations
-   - Record troubleshooting steps
+   - Update testing procedures
+   - Document recovery steps
+   - Add troubleshooting guide
+   - Note stability concerns

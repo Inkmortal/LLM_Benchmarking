@@ -3,7 +3,7 @@ pandas
 numpy
 matplotlib
 seaborn
-spacy
+spacy==3.7.2
 
 # AWS SDK and services
 langchain-aws
