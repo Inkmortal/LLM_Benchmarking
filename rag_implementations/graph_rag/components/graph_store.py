@@ -1,7 +1,7 @@
 """Graph storage using Neptune for graph RAG."""
 
 from typing import Dict, Any, List, Optional
-from utils.aws.neptune_utils import NeptuneManager, NeptuneGraph
+from utils.aws.neptune import NeptuneManager
 
 class GraphStore:
     """Handles graph storage and querying using Neptune."""
@@ -31,22 +31,17 @@ class GraphStore:
     def _init_graph_store(self):
         """Initialize Neptune graph store connection."""
         try:
-            # Set up Neptune cluster with cleanup disabled
+            # Set up Neptune manager with cleanup disabled during init
             self.neptune_manager = NeptuneManager(
                 cluster_name=self.cluster_name,
                 cleanup_enabled=False,  # Never cleanup during init
-                verbose=self.enable_audit
+                verbose=self.enable_audit,
+                reuse_existing=True  # Try to reuse existing resources
             )
             
-            # Get endpoint
+            # Get endpoint and graph connection
             endpoint = self.neptune_manager.setup_cluster()
-            
-            # Initialize graph interface with retries
-            self.graph = NeptuneGraph(
-                endpoint=endpoint,
-                max_retries=10,  # More retries for initial connection
-                retry_delay=5.0   # Start with longer delay
-            )
+            self.graph = self.neptune_manager.graph
             
             # Mark as initialized
             self._initialized = True

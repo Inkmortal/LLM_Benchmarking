@@ -31,12 +31,13 @@ def test_connection(cleanup: bool = False):
         # Initialize Neptune manager (never cleanup on error)
         manager = NeptuneManager(
             cluster_name='test-graph-rag-benchmark',
-            cleanup_enabled=False,
+            cleanup_enabled=False,  # Never cleanup during init
             verbose=True,
-            region='us-west-2'
+            region='us-west-2',
+            reuse_existing=True  # Try to reuse existing resources
         )
         
-        # Set up cluster (will use existing if available)
+        # Set up cluster (will validate and fix if needed)
         print("\nValidating Neptune infrastructure...")
         endpoint = manager.setup_cluster()
         print("\nCluster endpoint:", endpoint)
