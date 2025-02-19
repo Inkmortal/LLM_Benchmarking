@@ -25,7 +25,7 @@ class VPCManager:
             print(message)
 
     def _fix_vpc_config(self, vpc_id: str) -> bool:
-        """Try to fix VPC configuration issues."""
+        """Fix VPC configuration without deleting existing resources."""
         try:
             fixed = True
             
@@ -50,6 +50,7 @@ class VPCManager:
             for nat in nat_gateways['NatGateways']:
                 if nat['State'] == 'available':
                     working_nat = nat
+                    self.nat_gateway_id = nat['NatGatewayId']
                     break
             
             if not working_nat:
@@ -286,7 +287,7 @@ class VPCManager:
             return False
     
     def _find_existing_vpc(self) -> Optional[Tuple[str, List[str], str]]:
-        """Find existing VPC with our name."""
+        """Find existing VPC and validate/fix configuration."""
         try:
             # Look for VPC with our name
             vpcs = self.ec2.describe_vpcs(
@@ -393,13 +394,143 @@ class VPCManager:
             )
             
             # Create subnets
-            public_subnet_ids, private_subnet_ids = self._create_subnets(vpc_id)
+            public_subnet_ids = []
+            private_subnet_ids = []
             
-            # Configure routing
-            self._configure_routing(vpc_id, public_subnet_ids, private_subnet_ids, igw_id)
+            # Get available AZs
+            azs = self.ec2.describe_availability_zones()['AvailabilityZones']
+            
+            # Create subnets in first 2 AZs
+            for i, az in enumerate(azs[:2]):
+                # Create public subnet
+                self._log(f"Creating public subnet in {az['ZoneName']}...")
+                public_subnet = self.ec2.create_subnet(
+                    VpcId=vpc_id,
+                    CidrBlock=f'10.0.{i*2}.0/24',
+                    AvailabilityZone=az['ZoneName'],
+                    TagSpecifications=[{
+                        'ResourceType': 'subnet',
+                        'Tags': [{'Key': 'Name', 'Value': f'{self.cluster_name}-public-{i+1}'}]
+                    }]
+                )
+                public_subnet_ids.append(public_subnet['Subnet']['SubnetId'])
+                
+                # Enable auto-assign public IP for public subnet
+                self.ec2.modify_subnet_attribute(
+                    SubnetId=public_subnet['Subnet']['SubnetId'],
+                    MapPublicIpOnLaunch={'Value': True}
+                )
+                
+                # Create private subnet
+                self._log(f"Creating private subnet in {az['ZoneName']}...")
+                private_subnet = self.ec2.create_subnet(
+                    VpcId=vpc_id,
+                    CidrBlock=f'10.0.{i*2+1}.0/24',
+                    AvailabilityZone=az['ZoneName'],
+                    TagSpecifications=[{
+                        'ResourceType': 'subnet',
+                        'Tags': [{'Key': 'Name', 'Value': f'{self.cluster_name}-private-{i+1}'}]
+                    }]
+                )
+                private_subnet_ids.append(private_subnet['Subnet']['SubnetId'])
+            
+            # Create NAT Gateway
+            self._log("Creating NAT Gateway...")
+            eip = self.ec2.allocate_address(Domain='vpc')
+            self.eip_allocation_id = eip['AllocationId']
+            
+            nat_gateway = self.ec2.create_nat_gateway(
+                SubnetId=public_subnet_ids[0],  # Place in first public subnet
+                AllocationId=self.eip_allocation_id,
+                TagSpecifications=[{
+                    'ResourceType': 'natgateway',
+                    'Tags': [{'Key': 'Name', 'Value': f'{self.cluster_name}-nat'}]
+                }]
+            )
+            self.nat_gateway_id = nat_gateway['NatGateway']['NatGatewayId']
+            
+            # Wait for NAT Gateway
+            self._log("Waiting for NAT Gateway to be available...")
+            waiter = self.ec2.get_waiter('nat_gateway_available')
+            waiter.wait(
+                NatGatewayIds=[self.nat_gateway_id],
+                WaiterConfig={'Delay': 30, 'MaxAttempts': 20}
+            )
+            
+            # Create and configure route tables
+            self._log("Configuring route tables...")
+            
+            # Public route table
+            public_rt = self.ec2.create_route_table(VpcId=vpc_id)
+            public_rt_id = public_rt['RouteTable']['RouteTableId']
+            
+            # Add internet gateway route
+            self.ec2.create_route(
+                RouteTableId=public_rt_id,
+                DestinationCidrBlock='0.0.0.0/0',
+                GatewayId=igw_id
+            )
+            
+            # Associate with public subnets
+            for subnet_id in public_subnet_ids:
+                self.ec2.associate_route_table(
+                    RouteTableId=public_rt_id,
+                    SubnetId=subnet_id
+                )
+            
+            # Private route table
+            private_rt = self.ec2.create_route_table(VpcId=vpc_id)
+            private_rt_id = private_rt['RouteTable']['RouteTableId']
+            
+            # Add NAT Gateway route
+            self.ec2.create_route(
+                RouteTableId=private_rt_id,
+                DestinationCidrBlock='0.0.0.0/0',
+                NatGatewayId=self.nat_gateway_id
+            )
+            
+            # Associate with private subnets
+            for subnet_id in private_subnet_ids:
+                self.ec2.associate_route_table(
+                    RouteTableId=private_rt_id,
+                    SubnetId=subnet_id
+                )
             
             # Create security group
-            security_group_id = self._create_security_group(vpc_id)
+            self._log("Creating security group...")
+            security_group = self.ec2.create_security_group(
+                GroupName=f'{self.cluster_name}-sg',
+                Description=f'Security group for Neptune cluster {self.cluster_name}',
+                VpcId=vpc_id
+            )
+            security_group_id = security_group['GroupId']
+            
+            # Add security group rules
+            self.ec2.authorize_security_group_ingress(
+                GroupId=security_group_id,
+                IpPermissions=[{
+                    'FromPort': 8182,
+                    'ToPort': 8182,
+                    'IpProtocol': 'tcp',
+                    'IpRanges': [{
+                        'CidrIp': '0.0.0.0/0',
+                        'Description': 'Allow Neptune access'
+                    }]
+                }]
+            )
+            
+            self.ec2.authorize_security_group_egress(
+                GroupId=security_group_id,
+                IpPermissions=[{
+                    'IpProtocol': '-1',
+                    'FromPort': -1,
+                    'ToPort': -1,
+                    'IpRanges': [{
+                        'CidrIp': '0.0.0.0/0',
+                        'Description': 'Allow all outbound traffic'
+                    }]
+                }]
+            )
             
             # Store IDs for reference
             self.vpc_id = vpc_id

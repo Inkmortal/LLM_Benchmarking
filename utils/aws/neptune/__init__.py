@@ -94,7 +94,10 @@ class NeptuneManager:
             raise
     
     def cleanup(self) -> None:
-        """Clean up all resources if cleanup is enabled."""
+        """Clean up Neptune resources if cleanup is enabled.
+        
+        Note: This will never delete VPC resources, only Neptune cluster resources.
+        """
         if not self.cleanup_enabled:
             return
             
@@ -107,30 +110,6 @@ class NeptuneManager:
             # Clean up cluster
             self.cluster.cleanup()
             
-            # Clean up VPC last (dependencies must be gone)
-            if self.vpc.vpc_id:
-                self._log("Cleaning up VPC resources...")
-                # Delete NAT Gateway
-                if self.vpc.nat_gateway_id:
-                    self.vpc.ec2.delete_nat_gateway(
-                        NatGatewayId=self.vpc.nat_gateway_id
-                    )
-                
-                # Release Elastic IP
-                if self.vpc.eip_allocation_id:
-                    self.vpc.ec2.release_address(
-                        AllocationId=self.vpc.eip_allocation_id
-                    )
-                
-                # Delete security group
-                if self.vpc.security_group_id:
-                    self.vpc.ec2.delete_security_group(
-                        GroupId=self.vpc.security_group_id
-                    )
-                
-                # Delete VPC
-                self.vpc.ec2.delete_vpc(VpcId=self.vpc.vpc_id)
-                
             self._log("Cleanup complete")
             
         except Exception as e:
