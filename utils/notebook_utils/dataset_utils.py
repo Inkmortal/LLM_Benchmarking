@@ -4,8 +4,8 @@ import json
 import shutil
 from pathlib import Path
 from typing import Dict, Any, Tuple, List, Optional
-from llama_index.llama_dataset import LabelledRagDataset, download_llama_dataset
-from llama_index import SimpleDirectoryReader
+from llama_index.core.llama_dataset import LabelledRagDataset, download_llama_dataset
+from llama_index.core import SimpleDirectoryReader
 from ragas import SingleTurnSample, EvaluationDataset
 
 DATASET_REGISTRY = {
