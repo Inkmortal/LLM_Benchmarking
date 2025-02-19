@@ -17,7 +17,7 @@ git+https://github.com/awslabs/amazon-neptune-tools.git#subdirectory=neptune-pyt
 # RAG and evaluation
 ragas
 llama-index
-llama-index-core>=0.1.0  # Core functionality
+llama-index-core>=0.1.0
 llama-index-llms-openai
 llama-index-readers-wikipedia
 langchain
