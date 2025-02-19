@@ -48,14 +48,135 @@ All dependencies will be installed in your current environment and will be avail
 
 ### AWS Configuration
 
-#### SageMaker Users
-If you're running in SageMaker, ensure your notebook's IAM role has these permissions:
+#### First Time Setup
+
+1. Configure AWS Credentials:
+   ```bash
+   aws configure --profile Demo
+   ```
+   Enter your AWS credentials when prompted. You'll need:
+   - AWS Access Key ID
+   - AWS Secret Access Key
+   - Default region (use us-west-2)
+   - Default output format (json)
+
+2. Create IAM Role:
+   - Go to AWS IAM Console
+   - Create new role named "SageMaker-RAG_Benchmark"
+   - Add these policies:
+     ```
+     AmazonSageMakerFullAccess
+     AmazonNeptuneFullAccess
+     AmazonOpenSearchServiceFullAccess
+     AmazonS3FullAccess
+     AWSBedRockFullAccess
+     ```
+
+3. Run Neptune Setup:
+   ```bash
+   python development/scripts/test_neptune.py
+   ```
+   This script will:
+   - Create VPC with public/private subnets
+   - Set up NAT Gateway for internet access
+   - Configure security groups for Neptune
+   - Create Neptune cluster
+   - Test connectivity
+   
+   The script is safe to run multiple times - it will reuse existing resources.
+
+4. Create SageMaker Notebook:
+   - After test_neptune.py succeeds, it will output VPC details
+   - Use those values in this command:
+   ```bash
+   aws sagemaker create-notebook-instance \
+     --notebook-instance-name Rag-Benchmark-Dev \
+     --instance-type ml.m5.xlarge \
+     --role-arn arn:aws:iam::[YOUR-ACCOUNT]:role/service-role/SageMaker-RAG_Benchmark \
+     --subnet-id [PRIVATE-SUBNET-ID] \
+     --security-group-ids [SECURITY-GROUP-ID] \
+     --volume-size-in-gb 5 \
+     --platform-identifier notebook-al2-v3 \
+     --direct-internet-access Disabled \
+     --profile Demo
+   ```
+   Replace:
+   - [YOUR-ACCOUNT] with your AWS account ID
+   - [PRIVATE-SUBNET-ID] with subnet ID from test_neptune.py
+   - [SECURITY-GROUP-ID] with security group ID from test_neptune.py
+
+5. Wait for notebook to be ready (~5-10 minutes):
+   ```bash
+   aws sagemaker describe-notebook-instance \
+     --notebook-instance-name Rag-Benchmark-Dev \
+     --profile Demo
+   ```
+   Wait for "Status": "InService"
+
+6. Open the notebook:
+   - Go to SageMaker Console
+   - Click "Notebook instances"
+   - Find "Rag-Benchmark-Dev"
+   - Click "Open JupyterLab"
+
+7. Test Neptune Connection:
+   - Open test_neptune_connection.ipynb
+   - Run all cells
+   - If connection fails, see Troubleshooting section
+
+#### Current Infrastructure
+If infrastructure is already set up, these are the details:
+
+1. VPC Configuration:
+   - VPC ID: vpc-022d0e2853ed602bf
+   - Private Subnets: subnet-077c6d536982ad16a, subnet-02c6470f4f7828a63
+   - Security Group: sg-0f8f329adc7215501 (allows Neptune access)
+   - NAT Gateway configured for outbound internet access
+
+2. SageMaker Notebook:
+   - URL: rag-benchmark-dev-q5en.notebook.us-west-2.sagemaker.aws
+   - Instance Type: ml.m5.xlarge
+   - VPC: Configured in private subnet with NAT Gateway
+   - IAM Role: SageMaker-RAG_Benchmark
+
+Required IAM Role Permissions:
 - bedrock:InvokeModel
 - opensearch:*
 - neptune-db:*
 - s3:*
 
-The setup notebook will show your role ARN and instructions for adding permissions.
+#### Troubleshooting
+
+1. If notebook can't access Neptune:
+   ```bash
+   # Stop notebook instance
+   aws sagemaker stop-notebook-instance \
+     --notebook-instance-name Rag-Benchmark-Dev \
+     --profile Demo
+
+   # Wait for it to stop
+   aws sagemaker describe-notebook-instance \
+     --notebook-instance-name Rag-Benchmark-Dev \
+     --profile Demo
+
+   # Update notebook VPC config
+   aws sagemaker update-notebook-instance \
+     --notebook-instance-name Rag-Benchmark-Dev \
+     --subnet-id [PRIVATE-SUBNET-ID] \
+     --security-group-ids [SECURITY-GROUP-ID] \
+     --profile Demo
+
+   # Start notebook instance
+   aws sagemaker start-notebook-instance \
+     --notebook-instance-name Rag-Benchmark-Dev \
+     --profile Demo
+   ```
+
+2. If Neptune connection fails:
+   - Check security group allows port 8182
+   - Verify notebook is in correct subnet
+   - Ensure NAT Gateway is working
+   - Test connectivity using test_neptune.py
 
 #### Local Users
 If running locally, you can configure AWS access through:
@@ -290,3 +411,4 @@ Research Pipeline
 <br>
 <em>Advancing LLM Implementation Understanding</em>
 </div>
+

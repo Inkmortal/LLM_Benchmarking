@@ -4,7 +4,7 @@ Neptune cluster management utilities.
 
 import time
 import socket
-from typing import Optional
+from typing import Optional, List, Dict
 import boto3
 from botocore.exceptions import ClientError
 
@@ -25,6 +25,87 @@ class ClusterManager:
         if self.verbose:
             print(message)
     
+    def _fix_cluster_config(self, cluster_id: str) -> bool:
+        """Try to fix cluster configuration issues."""
+        try:
+            cluster = self.neptune.describe_db_clusters(
+                DBClusterIdentifier=cluster_id
+            )['DBClusters'][0]
+            
+            fixed = True
+            
+            # Check IAM auth
+            if not cluster['EnableIAMDatabaseAuthentication']:
+                self._log("IAM auth disabled, cannot fix without recreation")
+                fixed = False
+            
+            # Check parameter group
+            if cluster['DBClusterParameterGroup'] != self.param_group_name:
+                self._log(f"Updating parameter group to {self.param_group_name}...")
+                try:
+                    # Create parameter group if needed
+                    self.create_parameter_group()
+                    
+                    # Apply to cluster
+                    self.neptune.modify_db_cluster(
+                        DBClusterIdentifier=cluster_id,
+                        ApplyImmediately=True,
+                        DBClusterParameterGroupName=self.param_group_name
+                    )
+                except Exception as e:
+                    self._log(f"Error updating parameter group: {str(e)}")
+                    fixed = False
+            
+            # Check instances
+            instances = self.neptune.describe_db_instances(
+                Filters=[{'Name': 'db-cluster-id', 'Values': [cluster_id]}]
+            )['DBInstances']
+            
+            if not instances:
+                self._log("No instances found, creating...")
+                self._ensure_instance()
+            else:
+                instance = instances[0]
+                if instance['DBInstanceStatus'] != 'available':
+                    self._log(f"Instance status: {instance['DBInstanceStatus']}")
+                    fixed = False
+            
+            return fixed
+            
+        except Exception as e:
+            self._log(f"Error fixing cluster config: {str(e)}")
+            return False
+    
+    def _find_existing_cluster(self) -> Optional[str]:
+        """Find and validate existing cluster."""
+        try:
+            response = self.neptune.describe_db_clusters(
+                DBClusterIdentifier=self.cluster_name
+            )
+            
+            if not response['DBClusters']:
+                return None
+                
+            cluster = response['DBClusters'][0]
+            
+            # Try to fix configuration if needed
+            if cluster['Status'] != 'available' or not self._fix_cluster_config(cluster['DBClusterIdentifier']):
+                self._log("Could not fix cluster configuration")
+                return None
+            
+            self.cluster_id = cluster['DBClusterIdentifier']
+            self.endpoint = cluster['Endpoint']
+            
+            # Ensure instance exists and is ready
+            self._ensure_instance()
+            
+            return self.endpoint
+            
+        except ClientError as e:
+            if e.response['Error']['Code'] != 'DBClusterNotFoundFault':
+                raise
+            return None
+    
     def create_parameter_group(self) -> None:
         """Create a custom DB cluster parameter group."""
         try:
@@ -41,7 +122,7 @@ class ClusterManager:
     
     def create_cluster(
         self,
-        subnet_ids: list[str],
+        subnet_ids: List[str],
         security_group_id: str,
         subnet_group_name: Optional[str] = None
     ) -> str:
@@ -57,6 +138,12 @@ class ClusterManager:
             Neptune cluster endpoint
         """
         try:
+            # Check for existing cluster first
+            existing = self._find_existing_cluster()
+            if existing:
+                self._log("Using existing cluster")
+                return existing
+            
             # Create parameter group
             self.create_parameter_group()
             
