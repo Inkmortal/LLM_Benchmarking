@@ -34,7 +34,8 @@ class NeptuneGraph:
         self.endpoint = endpoint
         self.max_retries = max_retries
         self.retry_delay = retry_delay
-        self.session = session or boto3.Session(profile_name='Demo')
+        # Initialize session - use instance role by default
+        self.session = session or boto3.Session()
         self.verbose = verbose
         
         # Initialize connection state

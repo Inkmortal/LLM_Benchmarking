@@ -35,8 +35,8 @@ class NeptuneManager:
         self.cleanup_enabled = cleanup_enabled
         self.verbose = verbose
         
-        # Initialize session
-        self.session = session or boto3.Session(profile_name='Demo', region_name=region)
+        # Initialize session - use instance role by default
+        self.session = session or boto3.Session(region_name=region)
         
         # Initialize managers
         self.vpc = VPCManager(cluster_name, self.session, verbose)
