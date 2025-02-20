@@ -19,40 +19,38 @@ class VectorStore:
         search_type: str = 'script',
         similarity_threshold: Optional[float] = None,
         index_settings: Optional[Dict] = None,
-        knn_params: Optional[Dict] = None,
         max_retries: int = 5,
         min_delay: float = 1.0,
         max_delay: float = 60.0,
         embedding_model_id: str = "cohere.embed-english-v3"
     ):
         """Initialize vector store.
-        
+
         Args:
             index_name: Name of the OpenSearch index
             search_type: Type of vector search ('script' or 'knn')
             similarity_threshold: Minimum similarity score to include
-            index_settings: Custom index settings
-            knn_params: Parameters for k-NN algorithm
+            index_settings: Custom index settings for OpenSearch
             max_retries: Maximum number of retry attempts
             min_delay: Minimum delay between retries in seconds
             max_delay: Maximum delay between retries in seconds
+            embedding_model_id: The Bedrock model ID for embeddings
         """
         self.index_name = index_name
         self.search_type = search_type
         self.similarity_threshold = similarity_threshold
         self.index_settings = index_settings or {}
-        self.knn_params = knn_params or {}
         self.max_retries = max_retries
         self.min_delay = min_delay
         self.max_delay = max_delay
-        
+
         # Initialize Bedrock client for embeddings
         self.bedrock = boto3.client('bedrock-runtime')
         self.embedding_model_id = embedding_model_id
-        
+
         # Initialize OpenSearch client
         self._init_client()
-        
+
         # Ensure index exists
         self._create_index_if_not_exists()
     
@@ -126,10 +124,39 @@ class VectorStore:
                 }
             }
             
-            # Update k-NN parameters if provided
-            if self.knn_params:
-                mapping['properties']['embedding']['method']['parameters'].update(self.knn_params)
-            
+            settings = {
+                'index': {
+                    'number_of_shards': 1,
+                    'number_of_replicas': 0,
+                    'knn': True,  # Enable k-NN
+                    'knn.algo_param.ef_search': 512
+                }
+            }
+
+            # Update with custom settings
+            settings.update(self.index_settings)
+
+            # Mapping for vector field - supports both k-NN and script score
+            mapping = {
+                'properties': {
+                    'embedding': {
+                        'type': 'knn_vector',
+                        'dimension': 1024,  # Cohere embedding dimension
+                        'method': {
+                            'name': 'hnsw',
+                            'space_type': 'cosinesimil',
+                            'engine': 'nmslib',
+                            'parameters': {
+                                'ef_construction': 512,
+                                'm': 16
+                            }
+                        }
+                    },
+                    'content': {'type': 'text'},
+                    'metadata': {'type': 'object'}
+                }
+            }
+
             # Create index
             self.opensearch.indices.create(
                 index=self.index_name,

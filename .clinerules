@@ -140,6 +140,7 @@
 - Generate comprehensive reports
 - Track performance over time
 - Document anomalies
+- Moved evaluation logic to `rag_implementations/graph_rag/components/benchmark.py`
 
 ### 3. Documentation
 - Keep docs updated with changes
