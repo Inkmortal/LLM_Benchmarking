@@ -11,6 +11,13 @@ class OpenSearchConfig:
     verbose: bool = True
     region: str = "us-west-2"
 
+    def __post_init__(self):
+        """Validate configuration after initialization."""
+        if len(self.domain_name) > 28:
+            raise ValueError(
+                f"Domain name '{self.domain_name}' exceeds AWS limit of 28 characters"
+            )
+
 @dataclass
 class VectorSearchConfig:
     """Configuration for vector search operations."""
