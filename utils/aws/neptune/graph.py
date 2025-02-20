@@ -9,6 +9,7 @@ from botocore.auth import SigV4Auth
 from botocore.awsrequest import AWSRequest
 from gremlin_python.driver.driver_remote_connection import DriverRemoteConnection
 from gremlin_python.process.anonymous_traversal import traversal
+from gremlin_python.process.traversal import __ as _
 
 class NeptuneGraph:
     """Interface for working with Neptune graph database."""
@@ -151,7 +152,7 @@ class NeptuneGraph:
         if not self.g:
             raise RuntimeError("Graph connection not initialized")
             
-        edge = self.g.V(from_id).addE(label).to(self.g.V(to_id))
+        edge = self.g.V(from_id).addE(label).to(_.V(to_id))
         
         if properties:
             for key, value in properties.items():
