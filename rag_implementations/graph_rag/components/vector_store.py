@@ -91,9 +91,11 @@ class VectorStore:
                 'index': {
                     'number_of_shards': 1,
                     'number_of_replicas': 0,
-                    'knn': 'true',  # Enable k-NN, must be string 'true'
-                    'knn.algo_param.ef_search': 512,  # Higher values = more accurate but slower
-                    'knn.space_type': 'cosinesimil'  # Specify similarity space
+                },
+                'knn': {
+                    'algo_param': {
+                        'ef_search': 512  # Higher values = more accurate but slower
+                    }
                 }
             }
 
@@ -245,8 +247,8 @@ class VectorStore:
                             'script': {
                                 'lang': 'painless',
                                 'source': """
-                                    double score = 1.0 + cosineSimilarity(params.query_vector, 'embedding');
-                                    return score;
+                                    double score = cosineSimilarity(params.query_vector, doc['embedding']);
+                                    return score + 1.0;
                                 """,
                                 'params': {'query_vector': query_vector}
                             }
