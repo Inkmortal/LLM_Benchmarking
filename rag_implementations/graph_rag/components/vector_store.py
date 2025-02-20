@@ -8,7 +8,6 @@ from typing import Dict, Any, List, Optional
 from opensearchpy import OpenSearch, RequestsHttpConnection, helpers
 from requests_aws4auth import AWS4Auth
 from botocore.exceptions import ClientError
-from utils.aws.opensearch_utils import OpenSearchManager
 
 class VectorStore:
     """Handles vector storage and search using OpenSearch."""
@@ -47,7 +46,6 @@ class VectorStore:
         
         # Track component state
         self._initialized = False
-        self.opensearch_manager = None
         self.opensearch = None
         
         # Initialize OpenSearch
@@ -55,75 +53,47 @@ class VectorStore:
     
     def _get_domain_name(self) -> str:
         """Get consistent domain name for benchmarking."""
-        return "rag-bench"  # Simple, consistent name for benchmark domain
+        return "graph-rag-benchmark-store"  # More specific name for graph RAG
     
     def _init_vector_store(self):
         """Initialize OpenSearch vector store."""
         try:
-            # First check if domain exists and get endpoint
-            client = boto3.client('opensearch')
-            domain_name = self._get_domain_name()
+            # Get OpenSearch host from environment
+            opensearch_host = os.getenv('OPENSEARCH_HOST')
+            if not opensearch_host:
+                raise ValueError("OPENSEARCH_HOST environment variable is required")
             
-            try:
-                # Try to get existing domain
-                response = client.describe_domain(DomainName=domain_name)
-                if 'DomainStatus' in response:
-                    status = response['DomainStatus']
-                    if 'Endpoints' in status:
-                        endpoint = status['Endpoints'].get('vpc') or status['Endpoint']
-                        if endpoint:
-                            print(f"Using existing OpenSearch domain: {domain_name}")
-                            self._setup_client(endpoint)
-                            return
-            except client.exceptions.ResourceNotFoundException:
-                pass
-            
-            # Domain doesn't exist or isn't ready, create/wait for it
-            self.opensearch_manager = OpenSearchManager(
-                domain_name=domain_name,
-                cleanup_enabled=False,  # Never cleanup during init
-                verbose=True  # Always show progress for vector store
+            # Get AWS credentials for auth
+            credentials = boto3.Session().get_credentials()
+            region = boto3.Session().region_name
+            awsauth = AWS4Auth(
+                credentials.access_key,
+                credentials.secret_key,
+                region,
+                'es',
+                session_token=credentials.token
             )
             
-            # Get endpoint
-            endpoint = self.opensearch_manager.setup_domain()
-            self._setup_client(endpoint)
+            # Initialize OpenSearch client
+            self.opensearch = OpenSearch(
+                hosts=[{'host': opensearch_host, 'port': 443}],
+                http_auth=awsauth,
+                use_ssl=True,
+                verify_certs=True,
+                connection_class=RequestsHttpConnection,
+                timeout=60,
+                max_retries=10,
+                retry_on_timeout=True
+            )
+            
+            # Create index if it doesn't exist
+            if not self.opensearch.indices.exists(self.index_name):
+                self._create_index()
+            
+            self._initialized = True
             
         except Exception as e:
-            # Clean up on initialization failure
-            self.cleanup(delete_resources=False)
             raise Exception(f"Failed to initialize vector store: {str(e)}") from e
-    
-    def _setup_client(self, endpoint: str):
-        """Set up OpenSearch client with endpoint."""
-        # Get AWS credentials for auth
-        credentials = boto3.Session().get_credentials()
-        region = boto3.Session().region_name
-        awsauth = AWS4Auth(
-            credentials.access_key,
-            credentials.secret_key,
-            region,
-            'es',
-            session_token=credentials.token
-        )
-        
-        # Initialize OpenSearch client with proper auth
-        self.opensearch = OpenSearch(
-            hosts=[{'host': endpoint, 'port': 443}],
-            http_auth=awsauth,
-            use_ssl=True,
-            verify_certs=True,
-            connection_class=RequestsHttpConnection,
-            timeout=60,
-            max_retries=10,
-            retry_on_timeout=True
-        )
-        
-        # Create index if it doesn't exist
-        if not self.opensearch.indices.exists(index=self.index_name):
-            self._create_index()
-        
-        self._initialized = True
     
     def _create_index(self):
         """Create OpenSearch index with vector mapping."""
@@ -143,9 +113,9 @@ class VectorStore:
         # Default mapping for vector field
         mapping = {
             'properties': {
-                'embedding': {  # Changed from 'vector' to 'embedding' to match baseline
+                'embedding': {
                     'type': 'knn_vector',
-                    'dimension': 1536,  # Cohere embedding size
+                    'dimension': 1024,  # Cohere embedding dimension (fixed from 1536)
                     'method': {
                         'name': 'hnsw',
                         'space_type': 'cosinesimil',
@@ -300,7 +270,7 @@ class VectorStore:
                     'size': k,
                     'query': {
                         'knn': {
-                            'embedding': {  # Changed from 'vector' to 'embedding'
+                            'embedding': {
                                 'vector': query_vector,
                                 'k': k
                             }
@@ -315,7 +285,7 @@ class VectorStore:
                         'script_score': {
                             'query': {'match_all': {}},
                             'script': {
-                                'source': "cosineSimilarity(params.query_vector, 'embedding') + 1.0",  # Changed field name
+                                'source': "cosineSimilarity(params.query_vector, 'embedding') + 1.0",
                                 'params': {'query_vector': query_vector}
                             }
                         }
@@ -362,14 +332,5 @@ class VectorStore:
             except:
                 pass  # Best effort cleanup
             self.opensearch = None
-            
-        if self.opensearch_manager:
-            try:
-                # Only delete domain if requested
-                self.opensearch_manager.cleanup_enabled = delete_resources
-                self.opensearch_manager.cleanup()
-            except:
-                pass  # Best effort cleanup
-            self.opensearch_manager = None
             
         self._initialized = False
