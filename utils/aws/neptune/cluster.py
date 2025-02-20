@@ -8,11 +8,16 @@ from typing import Optional, List, Dict
 import boto3
 from botocore.exceptions import ClientError
 
-class ClusterManager:
-    def __init__(self, cluster_name: str, session: boto3.Session, verbose: bool = True):
+class NeptuneManager:
+    def __init__(self, cluster_name: str, session: boto3.Session = None, verbose: bool = True, cleanup_enabled: bool = False):
         self.cluster_name = cluster_name
-        self.neptune = session.client('neptune')
         self.verbose = verbose
+        self.cleanup_enabled = cleanup_enabled
+        
+        # Create session if not provided
+        if session is None:
+            session = boto3.Session()
+        self.neptune = session.client('neptune')
         
         # Track resources
         self.cluster_id = None
@@ -320,6 +325,10 @@ class ClusterManager:
     
     def cleanup(self) -> None:
         """Clean up cluster resources."""
+        if not self.cleanup_enabled:
+            self._log("Cleanup disabled. Skipping resource deletion.")
+            return
+
         try:
             if self.instance_id:
                 self._log(f"Deleting instance: {self.instance_id}")
@@ -400,4 +409,71 @@ class ClusterManager:
                 
         except Exception as e:
             self._log(f"Error during cleanup: {str(e)}")
+            raise
+
+    def setup_cluster(self) -> str:
+        """
+        Set up Neptune cluster and return endpoint.
+        Creates a new cluster if one doesn't exist.
+        
+        Returns:
+            Neptune cluster endpoint
+        """
+        # Check for existing cluster first
+        existing_endpoint = self._find_existing_cluster()
+        if existing_endpoint:
+            self._log(f"Using existing cluster: {self.cluster_name}")
+            return existing_endpoint
+
+        # Create new cluster
+        self._log(f"Creating new Neptune cluster: {self.cluster_name}")
+        try:
+            # Get default VPC
+            ec2 = boto3.client('ec2')
+            vpcs = ec2.describe_vpcs(
+                Filters=[{'Name': 'isDefault', 'Values': ['true']}]
+            )['Vpcs']
+            
+            if not vpcs:
+                raise Exception("No default VPC found")
+            
+            vpc_id = vpcs[0]['VpcId']
+            
+            # Get subnets in default VPC
+            subnets = ec2.describe_subnets(
+                Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}]
+            )['Subnets']
+            
+            if len(subnets) < 2:
+                raise Exception("Need at least 2 subnets for Neptune cluster")
+            
+            subnet_ids = [subnet['SubnetId'] for subnet in subnets[:2]]
+            
+            # Create security group
+            security_group = ec2.create_security_group(
+                GroupName=f"{self.cluster_name}-sg",
+                Description=f"Security group for Neptune cluster {self.cluster_name}"
+            )
+            
+            # Add inbound rule for Neptune port
+            ec2.authorize_security_group_ingress(
+                GroupId=security_group['GroupId'],
+                IpPermissions=[{
+                    'IpProtocol': 'tcp',
+                    'FromPort': 8182,
+                    'ToPort': 8182,
+                    'IpRanges': [{'CidrIp': '0.0.0.0/0'}]
+                }]
+            )
+            
+            # Create cluster
+            endpoint = self.create_cluster(
+                subnet_ids=subnet_ids,
+                security_group_id=security_group['GroupId']
+            )
+            
+            return endpoint
+            
+        except Exception as e:
+            self._log(f"Error setting up cluster: {str(e)}")
             raise

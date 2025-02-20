@@ -44,7 +44,8 @@ class GraphStore:
         print("Setting up Neptune cluster...")
         self.neptune_manager = NeptuneManager(
             cluster_name=self.cluster_name,
-            enable_audit=self.enable_audit
+            enable_audit=self.enable_audit,
+            cleanup_enabled=False  # Never auto-cleanup during initialization
         )
         self.endpoint = self.neptune_manager.setup_cluster()
         self._initialized = True
@@ -77,8 +78,11 @@ class GraphStore:
         """Delete existing Neptune cluster."""
         from utils.aws.neptune.cluster import NeptuneManager
         print("Deleting existing Neptune cluster...")
-        temp_manager = NeptuneManager(cluster_name=self.cluster_name)
-        temp_manager.delete_cluster()
+        temp_manager = NeptuneManager(
+            cluster_name=self.cluster_name,
+            cleanup_enabled=True  # Always cleanup when explicitly deleting
+        )
+        temp_manager.cleanup()
         print("Neptune cluster deleted.")
 
 

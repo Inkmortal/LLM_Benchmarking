@@ -279,9 +279,6 @@ class OpenSearchManager:
                     'EnforceHTTPS': True,
                     'TLSSecurityPolicy': 'Policy-Min-TLS-1-2-2019-07'
                 },
-                AdvancedOptions={
-                    'string': 'string'
-                },
                 OffPeakWindowOptions={
                     'Enabled': False
                 }
