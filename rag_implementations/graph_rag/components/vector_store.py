@@ -3,16 +3,17 @@
 import os
 import time
 import random
-import boto3
 import json
 from typing import Dict, Any, List, Optional
-from opensearchpy import OpenSearch, RequestsHttpConnection, helpers
+from opensearchpy import helpers
 from requests_aws4auth import AWS4Auth
 from botocore.exceptions import ClientError
+from utils.aws.opensearch_utils import OpenSearchClient, OpenSearchIndexManager
+from utils.aws.embedding_utils import EmbeddingsManager
 
 class VectorStore:
     """Handles vector storage and search using OpenSearch."""
-    
+
     def __init__(
         self,
         index_name: str,
@@ -44,139 +45,78 @@ class VectorStore:
         self.min_delay = min_delay
         self.max_delay = max_delay
 
-        # Initialize Bedrock client for embeddings
-        self.bedrock = boto3.client('bedrock-runtime')
-        self.embedding_model_id = embedding_model_id
+        # Use the new EmbeddingsManager
+        self.embeddings_manager = EmbeddingsManager(model_id=embedding_model_id)
 
-        # Initialize OpenSearch client
-        self._init_client()
+        # Use the new OpenSearchClient and OpenSearchIndexManager
+        self.opensearch_client = OpenSearchClient(domain_name=os.getenv('OPENSEARCH_DOMAIN'))
+        self.index_manager = OpenSearchIndexManager(self.opensearch_client, index_name)
 
-        # Ensure index exists
+        if not self.index_manager.check_configuration(index_settings, self._get_index_mapping()):
+            print("OpenSearch index configuration mismatch. Deleting and recreating index.")
+            self.index_manager.delete_index()
+        
         self._create_index_if_not_exists()
-    
-    def _init_client(self):
-        """Initialize OpenSearch client."""
-        # Get OpenSearch host from environment
-        self.opensearch_host = os.getenv('OPENSEARCH_HOST')
-        if not self.opensearch_host:
-            raise ValueError("OPENSEARCH_HOST environment variable is required")
-        
-        # Get AWS credentials for auth
-        credentials = boto3.Session().get_credentials()
-        region = boto3.Session().region_name
-        self.awsauth = AWS4Auth(
-            credentials.access_key,
-            credentials.secret_key,
-            region,
-            'es',
-            session_token=credentials.token
-        )
-        
-        # Initialize OpenSearch client
-        self.opensearch = OpenSearch(
-            hosts=[{'host': self.opensearch_host, 'port': 443}],
-            http_auth=self.awsauth,
-            use_ssl=True,
-            verify_certs=True,
-            connection_class=RequestsHttpConnection,
-            timeout=60,
-            max_retries=10,
-            retry_on_timeout=True
-        )
-    
+
+    def _get_index_mapping(self):
+        """
+        Defines the OpenSearch index mapping for vector storage.  Supports both k-NN and script_score.
+        """
+        return {
+            'properties': {
+                'embedding': {
+                    'type': 'knn_vector',
+                    'dimension': 1024,  # Cohere embedding dimension
+                    'method': {
+                        'name': 'hnsw',
+                        'space_type': 'cosinesimil',
+                        'engine': 'nmslib',
+                        'parameters': {
+                            'ef_construction': 512,
+                            'm': 16
+                        }
+                    }
+                },
+                'content': {'type': 'text'},
+                'metadata': {'type': 'object'}
+            }
+        }
+
+
     def _create_index_if_not_exists(self):
         """Create OpenSearch index with appropriate mapping and settings."""
-        if not self.opensearch.indices.exists(self.index_name):
+        if not self.opensearch_client.index_exists(self.index_name):
             # Default settings
             settings = {
                 'index': {
                     'number_of_shards': 1,
                     'number_of_replicas': 0,
-                    'knn': {
-                        'algo_param': {
-                            'ef_search': 512  # Higher values = more accurate but slower
-                        }
-                    }
-                }
-            }
-            
-            # Update with custom settings
-            settings.update(self.index_settings)
-            
-            # Default mapping for vector field
-            mapping = {
-                'properties': {
-                    'embedding': {
-                        'type': 'knn_vector',
-                        'dimension': 1024,  # Cohere embedding dimension
-                        'method': {
-                            'name': 'hnsw',
-                            'space_type': 'cosinesimil',
-                            'engine': 'nmslib',
-                            'parameters': {
-                                'ef_construction': 512,
-                                'm': 16
-                            }
-                        }
-                    },
-                    'content': {'type': 'text'},
-                    'metadata': {'type': 'object'}
-                }
-            }
-            
-            settings = {
-                'index': {
-                    'number_of_shards': 1,
-                    'number_of_replicas': 0,
                     'knn': True,  # Enable k-NN
-                    'knn.algo_param.ef_search': 512
+                    'knn.algo_param.ef_search': 512  # Higher values = more accurate but slower
                 }
             }
 
             # Update with custom settings
             settings.update(self.index_settings)
 
-            # Mapping for vector field - supports both k-NN and script score
-            mapping = {
-                'properties': {
-                    'embedding': {
-                        'type': 'knn_vector',
-                        'dimension': 1024,  # Cohere embedding dimension
-                        'method': {
-                            'name': 'hnsw',
-                            'space_type': 'cosinesimil',
-                            'engine': 'nmslib',
-                            'parameters': {
-                                'ef_construction': 512,
-                                'm': 16
-                            }
-                        }
-                    },
-                    'content': {'type': 'text'},
-                    'metadata': {'type': 'object'}
-                }
-            }
+            # Get the mapping
+            mapping = self._get_index_mapping()
 
             # Create index
-            self.opensearch.indices.create(
-                index=self.index_name,
-                body={
-                    'settings': settings,
-                    'mappings': mapping
-                }
-            )
-    
+            self.opensearch_client.create_index(self.index_name, settings, mapping)
+
+
     def _invoke_with_retry(self, operation, *args, **kwargs):
         """Execute operation with exponential backoff retry.
-        
+
         Args:
             operation: Function to execute
             *args: Positional arguments for operation
             **kwargs: Keyword arguments for operation
-            
+
         Returns:
             Operation result
-            
+
         Raises:
             Exception: If max retries exceeded
         """
@@ -195,14 +135,15 @@ class VectorStore:
                 )
                 time.sleep(delay)
         raise last_exception
-    
+
+
     def store_documents(
         self,
         documents: List[Dict[str, Any]],
         batch_size: int = 100
     ) -> None:
         """Store multiple documents with vectors.
-        
+
         Args:
             documents: List of documents with content, vector, and optional metadata
             batch_size: Number of documents to process in each batch
@@ -211,7 +152,7 @@ class VectorStore:
         for doc in documents:
             if 'content' not in doc or 'vector' not in doc:
                 raise ValueError("Each document must have 'content' and 'vector' fields")
-            
+
             # Prepare document for indexing
             action = {
                 '_index': self.index_name,
@@ -222,39 +163,22 @@ class VectorStore:
                 }
             }
             actions.append(action)
-            
+
             # Bulk index when batch is full
             if len(actions) >= batch_size:
-                self._invoke_with_retry(helpers.bulk, self.opensearch, actions)
+                self._invoke_with_retry(helpers.bulk, self.opensearch_client.client, actions)
                 actions = []
-        
+
         # Index any remaining documents
         if actions:
-            self._invoke_with_retry(helpers.bulk, self.opensearch, actions)
-    
+            self._invoke_with_retry(helpers.bulk, self.opensearch_client.client, actions)
+
+
     def get_embedding(self, text: str) -> List[float]:
-        """Get embedding vector for text using Bedrock.
-        
-        Args:
-            text: Text to embed
-            
-        Returns:
-            Vector embedding
-        """
-        try:
-            response = self._invoke_with_retry(
-                self.bedrock.invoke_model,
-                modelId=self.embedding_model_id,
-                body=json.dumps({
-                    "texts": [text],
-                    "input_type": "search_query"
-                })
-            )
-            embeddings = json.loads(response['body'].read())['embeddings']
-            return embeddings[0]
-        except Exception as e:
-            raise Exception(f"Failed to get embedding: {str(e)}") from e
-    
+        """Get embedding vector for text using Bedrock."""
+        return self.embeddings_manager.get_embedding(text)
+
+
     def store_document(
         self,
         doc_id: str,
@@ -263,7 +187,7 @@ class VectorStore:
         metadata: Optional[Dict[str, Any]] = None
     ) -> None:
         """Store single document with vector embedding.
-        
+
         Args:
             doc_id: Document identifier
             content: Document content
@@ -273,25 +197,26 @@ class VectorStore:
         # Get embedding if not provided
         if vector is None:
             vector = self.get_embedding(content)
-            
+
         # Store as single document using bulk operation for consistency
         self.store_documents([{
             'content': content,
             'vector': vector,
             'metadata': metadata or {}
         }])
-    
+
+
     def search(
         self,
         query_vector: List[float],
         k: int = 5
     ) -> List[Dict[str, Any]]:
         """Search for similar documents using vector similarity.
-        
+
         Args:
             query_vector: Query vector embedding
             k: Number of results to return
-            
+
         Returns:
             List of document data with scores
         """
@@ -323,18 +248,18 @@ class VectorStore:
                         }
                     }
                 }
-                
+
                 # Add score threshold if specified
                 if self.similarity_threshold:
                     body['min_score'] = self.similarity_threshold
-            
+
             # Execute search with retry
             response = self._invoke_with_retry(
-                self.opensearch.search,
+                self.opensearch_client.client.search,
                 index=self.index_name,
                 body=body
             )
-            
+
             # Process results
             results = []
             for hit in response['hits']['hits']:
@@ -344,21 +269,22 @@ class VectorStore:
                     'metadata': hit['_source']['metadata'],
                     'score': hit['_score']
                 })
-                
+
             return results
-            
+
         except Exception as e:
             raise Exception(f"Failed to search: {str(e)}") from e
-    
+
+
     def cleanup(self, delete_resources: bool = False):
         """Clean up resources.
-        
+
         Args:
             delete_resources: Whether to delete OpenSearch domain (ignored, use OpenSearchManager instead)
         """
         try:
             # Delete index if it exists
-            if self.opensearch.indices.exists(index=self.index_name):
-                self.opensearch.indices.delete(index=self.index_name)
+            if self.opensearch_client.index_exists(self.index_name):
+                self.opensearch_client.delete_index(self.index_name)
         except:
             pass  # Best effort cleanup
