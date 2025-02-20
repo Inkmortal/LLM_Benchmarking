@@ -121,11 +121,10 @@ def save_results(results, dataset_name, results_dir):
     results_data = {
         'dataset': dataset_name,
         'num_examples': len(results['evaluation_data']['questions']),
-        'num_documents': len(results['evaluation_data']['contexts']), #This isn't correct, needs fixing
+        'num_documents': len(results['evaluation_data']['contexts']),
         'num_evaluated': len(results['evaluation_data']['questions']),
-        'rag_config': results['raw_results'].eval_config,  # Assuming this is where config is
         'metrics': results['metrics_df'],
-        'graph_metrics': results.get('graph_metrics',{}),
+        'graph_metrics': results.get('graph_metrics', {}),
         'evaluation_data': results['evaluation_data']
     }
 

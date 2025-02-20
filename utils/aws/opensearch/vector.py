@@ -1,0 +1,219 @@
+"""Vector storage and search functionality using OpenSearch."""
+
+import time
+import random
+from typing import Dict, Any, List, Optional
+from .types import VectorSearchConfig
+from .client import OpenSearchClient
+
+class VectorStore:
+    """Handles vector storage and search using OpenSearch."""
+
+    def __init__(
+        self,
+        index_name: str,
+        config: VectorSearchConfig,
+        client: OpenSearchClient
+    ):
+        """Initialize vector store.
+
+        Args:
+            index_name: Name of the OpenSearch index
+            config: Vector search configuration
+            client: OpenSearch client instance
+        """
+        self.index_name = index_name
+        self.config = config
+        self.client = client
+        self._create_index_if_not_exists()
+
+    def _get_index_mapping(self):
+        """
+        Defines the OpenSearch index mapping for vector storage.
+        """
+        return {
+            'properties': {
+                'embedding': {
+                    'type': 'knn_vector',
+                    'dimension': 1024,  # Cohere embedding dimension
+                    'method': {
+                        'name': 'hnsw',
+                        'space_type': 'cosinesimil',
+                        'engine': 'nmslib',
+                        'parameters': {
+                            'ef_construction': 512,
+                            'm': 16
+                        }
+                    }
+                },
+                'content': {'type': 'text'},
+                'metadata': {'type': 'object'}
+            }
+        }
+
+    def _create_index_if_not_exists(self):
+        """Create OpenSearch index with appropriate mapping and settings."""
+        if not self.client.index_exists(self.index_name):
+            # Default settings
+            settings = {
+                'index': {
+                    'number_of_shards': 1,
+                    'number_of_replicas': 0,
+                },
+                'knn': {
+                    'algo_param': {
+                        'ef_search': 512  # Higher values = more accurate but slower
+                    }
+                }
+            }
+
+            # Update with custom settings
+            if self.config.index_settings:
+                settings.update(self.config.index_settings)
+
+            # Get the mapping
+            mapping = self._get_index_mapping()
+
+            # Update KNN parameters
+            if self.config.knn_params:
+                mapping['properties']['embedding']['method']['parameters'].update(
+                    self.config.knn_params
+                )
+
+            # Create index
+            self.client.create_index(self.index_name, settings, mapping)
+
+    def _invoke_with_retry(self, operation, *args, **kwargs):
+        """Execute operation with exponential backoff retry."""
+        last_exception = None
+        for attempt in range(self.config.max_retries):
+            try:
+                return operation(*args, **kwargs)
+            except Exception as e:
+                last_exception = e
+                if attempt == self.config.max_retries - 1:
+                    raise
+                # Exponential backoff with jitter
+                delay = min(
+                    self.config.max_delay,
+                    self.config.min_delay * (2 ** attempt) + random.uniform(0, 1)
+                )
+                time.sleep(delay)
+        raise last_exception
+
+    def store_documents(
+        self,
+        documents: List[Dict[str, Any]],
+        batch_size: int = 100
+    ) -> None:
+        """Store multiple documents with vectors.
+
+        Args:
+            documents: List of documents with content, vector, and optional metadata
+            batch_size: Number of documents to process in each batch
+        """
+        actions = []
+        for doc in documents:
+            if 'content' not in doc or 'vector' not in doc:
+                raise ValueError("Each document must have 'content' and 'vector' fields")
+
+            # Prepare document for indexing
+            action = {
+                '_index': self.index_name,
+                '_source': {
+                    'content': doc['content'],
+                    'embedding': doc['vector'],  # Map 'vector' to 'embedding'
+                    'metadata': doc.get('metadata', {})
+                }
+            }
+            actions.append(action)
+
+            # Bulk index when batch is full
+            if len(actions) >= batch_size:
+                self._invoke_with_retry(self.client.bulk_index, actions)
+                actions = []
+
+        # Index any remaining documents
+        if actions:
+            self._invoke_with_retry(self.client.bulk_index, actions)
+
+    def search(
+        self,
+        query_vector: List[float],
+        k: int = 5
+    ) -> List[Dict[str, Any]]:
+        """Search for similar documents using vector similarity.
+
+        Args:
+            query_vector: Query vector embedding
+            k: Number of results to return
+
+        Returns:
+            List of document data with scores
+        """
+        try:
+            if self.config.search_type == 'knn':
+                # Use k-NN search
+                body = {
+                    'size': k,
+                    'query': {
+                        'knn': {
+                            'embedding': {
+                                'vector': query_vector,
+                                'k': k
+                            }
+                        }
+                    }
+                }
+            else:
+                # Use script score with proper Painless syntax
+                body = {
+                    'size': k,
+                    'query': {
+                        'script_score': {
+                            'query': {'match_all': {}},
+                            'script': {
+                                'lang': 'painless',
+                                'source': """
+                                    double score = cosineSimilarity(params.query_vector, doc['embedding']);
+                                    return score + 1.0;
+                                """,
+                                'params': {'query_vector': query_vector}
+                            }
+                        }
+                    }
+                }
+
+                # Add score threshold if specified
+                if self.config.similarity_threshold:
+                    body['min_score'] = self.config.similarity_threshold
+
+            # Execute search with retry
+            response = self._invoke_with_retry(
+                self.client.search,
+                index=self.index_name,
+                body=body
+            )
+
+            # Process results
+            results = []
+            for hit in response['hits']['hits']:
+                results.append({
+                    'id': hit['_id'],
+                    'content': hit['_source']['content'],
+                    'metadata': hit['_source']['metadata'],
+                    'score': hit['_score']
+                })
+
+            return results
+
+        except Exception as e:
+            raise Exception(f"Failed to search: {str(e)}") from e
+
+    def cleanup(self, delete_resources: bool = False):
+        """Clean up resources."""
+        try:
+            if self.client.index_exists(self.index_name):
+                self.client.delete_index(self.index_name)
+        except:
+            pass  # Best effort cleanup
