@@ -245,8 +245,8 @@ class VectorStore:
                             'script': {
                                 'lang': 'painless',
                                 'source': """
-                                    double score = dotProduct(params.query_vector, doc['embedding'].value);
-                                    return 1.0 + score;
+                                    double score = 1.0 + cosineSimilarity(params.query_vector, 'embedding');
+                                    return score;
                                 """,
                                 'params': {'query_vector': query_vector}
                             }
