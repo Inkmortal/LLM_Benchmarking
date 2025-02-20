@@ -4,6 +4,7 @@ import os
 import time
 import random
 import boto3
+import json
 from typing import Dict, Any, List, Optional
 from opensearchpy import OpenSearch, RequestsHttpConnection, helpers
 from requests_aws4auth import AWS4Auth
