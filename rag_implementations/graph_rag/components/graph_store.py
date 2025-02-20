@@ -60,11 +60,12 @@ class GraphStore:
         SigV4Auth(creds, "neptune-db", "us-west-2").add_auth(request)
 
         # Create connection with signed headers
-        self.graph = DriverRemoteConnection(
+        connection = DriverRemoteConnection(
             database_url,
             'g',
             headers=request.headers.items()
         )
+        self.graph = traversal().withRemote(connection)
         print("Connected to Neptune")
 
     def _delete_cluster(self):
@@ -146,15 +147,11 @@ class GraphStore:
 
         try:
             # Create document vertex
-            doc_vertex_id = self.graph.add_vertex(
-                label="Document",
-                properties={
-                    "id": doc_id,
-                    "content": content,
-                    **metadata
-                },
-                id=doc_id
-            )
+            # Add document vertex
+            doc_vertex = self.graph.addV("Document").property("id", doc_id)
+            for key, value in {**metadata, "content": content}.items():
+                doc_vertex = doc_vertex.property(key, value)
+            doc_vertex_id = doc_vertex.next().id()
 
             # Track created entity vertices
             entity_vertices = {}
@@ -166,26 +163,22 @@ class GraphStore:
 
                 # Add entity vertex if it doesn't exist
                 if entity_id not in entity_vertices:
-                    entity_vertices[entity_id] = self.graph.add_vertex(
-                        label=entity["label"],
-                        properties={
-                            "text": entity["text"],
-                            "label": entity["label"],
-                            "frequency": entity["frequency"]
-                        },
-                        id=entity_id
-                    )
+                    # Add entity vertex
+                    entity_vertex = self.graph.addV(entity["label"]).property("id", entity_id)
+                    for key, value in {
+                        "text": entity["text"],
+                        "label": entity["label"],
+                        "frequency": entity["frequency"]
+                    }.items():
+                        entity_vertex = entity_vertex.property(key, value)
+                    entity_vertices[entity_id] = entity_vertex.next().id()
 
                 # Link entity to document
-                self.graph.add_edge(
-                    from_id=doc_vertex_id,
-                    to_id=entity_vertices[entity_id],
-                    label="CONTAINS",
-                    properties={
-                        "start": entity["start"],
-                        "end": entity["end"]
-                    }
-                )
+                # Add edge from document to entity
+                self.graph.V(doc_vertex_id).addE("CONTAINS").to(self.graph.V(entity_vertices[entity_id])) \
+                    .property("start", entity["start"]) \
+                    .property("end", entity["end"]) \
+                    .next()
 
             # Add relations
             for relation in graph_data["relations"]:
@@ -202,15 +195,12 @@ class GraphStore:
 
                     # Only create relation if both entities exist
                     if subject_id in entity_vertices and object_id in entity_vertices:
-                        self.graph.add_edge(
-                            from_id=entity_vertices[subject_id],
-                            to_id=entity_vertices[object_id],
-                            label=relation["predicate"].upper(),
-                            properties={
-                                "document": doc_id,
-                                "distance": relation["distance"]
-                            }
-                        )
+                        # Add edge between entities
+                        self.graph.V(entity_vertices[subject_id]).addE(relation["predicate"].upper()) \
+                            .to(self.graph.V(entity_vertices[object_id])) \
+                            .property("document", doc_id) \
+                            .property("distance", relation["distance"]) \
+                            .next()
 
         except Exception as e:
             raise Exception(f"Failed to store document {doc_id}: {str(e)}") from e
