@@ -4,7 +4,8 @@ import boto3
 from typing import Dict, Any, List, Optional
 from gremlin_python.driver.driver_remote_connection import DriverRemoteConnection
 from gremlin_python.process.anonymous_traversal import traversal
-from requests_aws4auth import AWS4Auth
+from botocore.auth import SigV4Auth
+from botocore.awsrequest import AWSRequest
 from botocore.exceptions import ClientError
 
 class GraphStore:
@@ -54,20 +55,15 @@ class GraphStore:
         # Create database URL for Gremlin
         database_url = f"wss://{self.endpoint}:8182/gremlin"
 
-        # Create connection with authentication headers
+        # Create and sign request
+        request = AWSRequest(method="GET", url=database_url, data=None)
+        SigV4Auth(creds, "neptune-db", "us-west-2").add_auth(request)
+
+        # Create connection with signed headers
         self.graph = DriverRemoteConnection(
             database_url,
             'g',
-            headers={
-                'Host': self.endpoint,
-                'Authorization': AWS4Auth(
-                    creds.access_key,
-                    creds.secret_key,
-                    'us-west-2',
-                    'neptune-db',
-                    session_token=creds.token
-                ).get_authorization_header()
-            }
+            headers=request.headers.items()
         )
         print("Connected to Neptune")
 
