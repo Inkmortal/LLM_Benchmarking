@@ -25,10 +25,8 @@ class OpenSearchClient:
         """
         self.domain_name = domain_name
         self.region = region
-        self.opensearch_host = os.getenv('OPENSEARCH_HOST')
-        if not self.opensearch_host:
-            raise ValueError("OPENSEARCH_HOST environment variable is required")
-        self.client = self._init_client()
+        self.opensearch_host = os.getenv('OPENSEARCH_HOST')  # Get from environment
+        self.client = self._init_client() if self.opensearch_host else None  # Initialize if host exists
 
 
     def _get_aws_credentials(self):
@@ -58,17 +56,32 @@ class OpenSearchClient:
             timeout=30  # Add a timeout
         )
     
+    def _ensure_client(self):
+        """Ensure client is initialized."""
+        # Update host from environment if needed
+        env_host = os.getenv('OPENSEARCH_HOST')
+        if env_host and env_host != self.opensearch_host:
+            self.opensearch_host = env_host
+            self.client = None  # Force client reinitialization
+
+        if not self.client and self.opensearch_host:
+            self.client = self._init_client()
+        if not self.client:
+            raise RuntimeError("OpenSearch client not initialized - host not set")
+
     def index_exists(self, index_name: str) -> bool:
         """
         Checks if an index with the given name exists.
         """
         try:
+            self._ensure_client()
             return self.client.indices.exists(index=index_name)
         except Exception as e:
             print(f"Error checking if index exists: {e}")
             return False # Assume it doesn't exist on error.
     
     def create_index(self, index_name: str, settings: dict, mapping: dict):
+        self._ensure_client()
         """Creates an index with given settings and mapping."""
         try:
             self.client.indices.create(
@@ -84,6 +97,7 @@ class OpenSearchClient:
             raise
 
     def delete_index(self, index_name: str):
+        self._ensure_client()
         """Deletes an index"""
         try:
             self.client.indices.delete(index=index_name, ignore=[400, 404])
@@ -93,6 +107,7 @@ class OpenSearchClient:
             raise
 
     def get_index_info(self, index_name: str):
+        self._ensure_client()
         """
         Retrieves the index information (settings and mappings) from OpenSearch.
         Returns None if the index does not exist.
@@ -228,6 +243,8 @@ class OpenSearchManager:
                 return None
 
             self.domain_endpoint = domain_status['Endpoint']
+            os.environ['OPENSEARCH_HOST'] = self.domain_endpoint  # Set for client use
+            self.client = OpenSearchClient(domain_name=self.domain_name)  # Initialize client now that we have the host
             return self.domain_endpoint
 
         except ClientError as e:
@@ -292,6 +309,8 @@ class OpenSearchManager:
 
             self._wait_for_domain(response['DomainStatus']['DomainId'])
             self.domain_endpoint = response['DomainStatus']['Endpoint']
+            os.environ['OPENSEARCH_HOST'] = self.domain_endpoint  # Set for client use
+            self.client = OpenSearchClient(domain_name=self.domain_name)  # Initialize client now that we have the host
             self._log(f"Domain created: {self.domain_name}")
             self._check_dns_propagation(self.domain_endpoint)
             return self.domain_endpoint

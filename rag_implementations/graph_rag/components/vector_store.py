@@ -49,7 +49,7 @@ class VectorStore:
         self.embeddings_manager = EmbeddingsManager(model_id=embedding_model_id)
 
         # Use the new OpenSearchClient and OpenSearchIndexManager
-        self.opensearch_client = OpenSearchClient(domain_name=os.getenv('OPENSEARCH_DOMAIN'))
+        self.opensearch_client = OpenSearchClient(domain_name="graph-rag-benchmark-store")
         self.index_manager = OpenSearchIndexManager(self.opensearch_client, index_name)
 
         if not self.index_manager.check_configuration(index_settings, self._get_index_mapping()):
@@ -91,8 +91,9 @@ class VectorStore:
                 'index': {
                     'number_of_shards': 1,
                     'number_of_replicas': 0,
-                    'knn': True,  # Enable k-NN
-                    'knn.algo_param.ef_search': 512  # Higher values = more accurate but slower
+                    'knn': 'true',  # Enable k-NN, must be string 'true'
+                    'knn.algo_param.ef_search': 512,  # Higher values = more accurate but slower
+                    'knn.space_type': 'cosinesimil'  # Specify similarity space
                 }
             }
 
@@ -235,14 +236,18 @@ class VectorStore:
                     }
                 }
             else:
-                # Use script score with cosine similarity
+                # Use script score with proper Painless syntax
                 body = {
                     'size': k,
                     'query': {
                         'script_score': {
                             'query': {'match_all': {}},
                             'script': {
-                                'source': "cosineSimilarity(params.query_vector, 'embedding') + 1.0",
+                                'lang': 'painless',
+                                'source': """
+                                    double score = dotProduct(params.query_vector, doc['embedding'].value);
+                                    return 1.0 + score;
+                                """,
                                 'params': {'query_vector': query_vector}
                             }
                         }
