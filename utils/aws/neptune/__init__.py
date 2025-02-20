@@ -5,12 +5,13 @@ Neptune database management utilities.
 import boto3
 from typing import Optional
 from .vpc import VPCManager
-from .cluster import NeptuneManager as ClusterManager  # Temporary alias for backward compatibility
+from .cluster import NeptuneManager
 from .graph import NeptuneGraph
 
-class NeptuneManager:
+class NeptuneOrchestrator:
     """
-    Manages Neptune database infrastructure using modular components.
+    Orchestrates Neptune infrastructure components including VPC, cluster, and graph.
+    Acts as a high-level coordinator between different Neptune components.
     """
     
     def __init__(
@@ -43,7 +44,8 @@ class NeptuneManager:
             verbose=verbose
         )
         
-        self.cluster = NeptuneManager(
+        # Initialize cluster manager
+        self.cluster_manager = NeptuneManager(
             cluster_name=cluster_name,
             session=self.session,
             verbose=verbose,
@@ -76,7 +78,7 @@ class NeptuneManager:
             vpc_id, subnet_ids, security_group_id = self.vpc.create_vpc()
             
             # Set up cluster
-            endpoint = self.cluster.create_cluster(
+            endpoint = self.cluster_manager.create_cluster(
                 subnet_ids=subnet_ids,
                 security_group_id=security_group_id
             )
@@ -109,7 +111,7 @@ class NeptuneManager:
                 self.graph = None
             
             # Clean up cluster
-            self.cluster.cleanup()
+            self.cluster_manager.cleanup()
             
             self._log("Cleanup complete")
             

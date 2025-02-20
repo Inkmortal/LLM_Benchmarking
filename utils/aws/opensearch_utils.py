@@ -285,6 +285,10 @@ class OpenSearchManager:
                         'WindowStartTime': {
                             'Hours': 2,  # 2 AM
                             'Minutes': 0
+                        },
+                        'Duration': {
+                            'Value': 8,  # 8 hours
+                            'Unit': 'HOURS'
                         }
                     }
                 }
