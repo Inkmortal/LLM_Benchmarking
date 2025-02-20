@@ -163,11 +163,14 @@ class DocumentProcessor:
         # Extract entities
         entities = []
         entity_counts = {}
+        entity_labels = {}  # Track entity labels for relation extraction
+        
         for ent in doc.ents:
             if ent.label_ in ["PERSON", "ORG", "GPE", "DATE", "EVENT"]:
-                # Track entity frequency
+                # Track entity frequency and label
                 key = (ent.text, ent.label_)
                 entity_counts[key] = entity_counts.get(key, 0) + 1
+                entity_labels[ent.text] = ent.label_
                 
                 if entity_counts[key] >= self.min_entity_freq:
                     entities.append({
@@ -188,12 +191,16 @@ class DocumentProcessor:
                         obj = next((c for c in token.children 
                                   if c.dep_ in ["dobj", "pobj"]), None)
                         if obj and abs(child.i - obj.i) <= self.max_relation_distance:
-                            relations.append({
-                                "subject": child.text,
-                                "predicate": token.text,
-                                "object": obj.text,
-                                "distance": abs(child.i - obj.i)
-                            })
+                            # Only add relation if both entities have labels
+                            if child.text in entity_labels and obj.text in entity_labels:
+                                relations.append({
+                                    "subject": child.text,
+                                    "subject_label": entity_labels[child.text],
+                                    "predicate": token.text,
+                                    "object": obj.text,
+                                    "object_label": entity_labels[obj.text],
+                                    "distance": abs(child.i - obj.i)
+                                })
         
         return {
             "entities": entities,

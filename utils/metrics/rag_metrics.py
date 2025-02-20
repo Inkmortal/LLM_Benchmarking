@@ -12,7 +12,7 @@ from ragas import evaluate
 from ragas.metrics import (
     Faithfulness,
     ContextPrecision,
-    ResponseRelevancy,
+    AnswerRelevancy,
     ContextRecall,
     ContextEntityRecall,
     NoiseSensitivity
@@ -66,7 +66,7 @@ class RAGMetricsEvaluator:
             
             # Answer generation metrics
             Faithfulness(llm=evaluator_llm),
-            ResponseRelevancy(llm=evaluator_llm, embeddings=evaluator_embeddings)
+            AnswerRelevancy(llm=evaluator_llm, embeddings=evaluator_embeddings)
         ]
         
     def evaluate_labeled(

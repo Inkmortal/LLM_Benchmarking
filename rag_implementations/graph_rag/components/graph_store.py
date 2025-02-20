@@ -67,6 +67,20 @@ class GraphStore:
         if not self.graph:
             raise RuntimeError("Graph connection not available")
     
+    def _create_entity_id(self, text: str, label: str) -> str:
+        """Create consistent entity ID.
+        
+        Args:
+            text: Entity text
+            label: Entity label
+            
+        Returns:
+            Entity vertex ID
+        """
+        # Clean text for ID (remove spaces, special chars)
+        clean_text = text.replace(" ", "_").replace("'", "").replace('"', "")
+        return f"{clean_text}_{label}"
+    
     def store_document(
         self,
         doc_id: str,
@@ -96,15 +110,17 @@ class GraphStore:
                 id=doc_id
             )
             
+            # Track created entity vertices
+            entity_vertices = {}
+            
             # Add entities
-            entity_ids = {}
             for entity in graph_data["entities"]:
                 # Create unique ID for entity
-                entity_id = f"{entity['text']}_{entity['label']}"
+                entity_id = self._create_entity_id(entity["text"], entity["label"])
                 
                 # Add entity vertex if it doesn't exist
-                if entity_id not in entity_ids:
-                    entity_ids[entity_id] = self.graph.add_vertex(
+                if entity_id not in entity_vertices:
+                    entity_vertices[entity_id] = self.graph.add_vertex(
                         label=entity["label"],
                         properties={
                             "text": entity["text"],
@@ -117,7 +133,7 @@ class GraphStore:
                 # Link entity to document
                 self.graph.add_edge(
                     from_id=doc_vertex_id,
-                    to_id=entity_ids[entity_id],
+                    to_id=entity_vertices[entity_id],
                     label="CONTAINS",
                     properties={
                         "start": entity["start"],
@@ -127,19 +143,22 @@ class GraphStore:
             
             # Add relations
             for relation in graph_data["relations"]:
-                if relation["object"]:
-                    # Create relation edge between entities
-                    subject_matches = self.graph.get_vertices(
-                        properties={"text": relation["subject"]}
+                if relation["object"] and relation["subject"]:
+                    # Get entity IDs
+                    subject_id = self._create_entity_id(
+                        relation["subject"],
+                        relation["subject_label"]
                     )
-                    object_matches = self.graph.get_vertices(
-                        properties={"text": relation["object"]}
+                    object_id = self._create_entity_id(
+                        relation["object"],
+                        relation["object_label"]
                     )
                     
-                    if subject_matches and object_matches:
+                    # Only create relation if both entities exist
+                    if subject_id in entity_vertices and object_id in entity_vertices:
                         self.graph.add_edge(
-                            from_id=subject_matches[0]["id"],
-                            to_id=object_matches[0]["id"],
+                            from_id=entity_vertices[subject_id],
+                            to_id=entity_vertices[object_id],
                             label=relation["predicate"].upper(),
                             properties={
                                 "document": doc_id,
@@ -167,16 +186,19 @@ class GraphStore:
         self.ensure_initialized()
         
         try:
-            entities = self.graph.get_neighbors(
-                vertex_id=doc_id,
-                direction="out",
-                edge_label="CONTAINS"
-            )
+            # Start with document vertex
+            query = self.graph.g.V(doc_id)
             
+            # Get outgoing CONTAINS edges to entities
+            query = query.out("CONTAINS")
+            
+            # Filter by label if specified
             if label:
-                entities = [e for e in entities if e["label"] == label]
-                
-            return entities
+                query = query.hasLabel(label)
+            
+            # Get entity properties
+            results = query.valueMap(True).toList()
+            return results
             
         except Exception as e:
             raise Exception(f"Failed to get entities for document {doc_id}: {str(e)}") from e
@@ -196,9 +218,13 @@ class GraphStore:
         self.ensure_initialized()
         
         try:
-            return self.graph.get_edges(
-                properties={"document": doc_id}
-            )
+            # Get edges with document property
+            query = self.graph.g.E().has("document", doc_id)
+            
+            # Get edge properties
+            results = query.valueMap(True).toList()
+            return results
+            
         except Exception as e:
             raise Exception(f"Failed to get relations for document {doc_id}: {str(e)}") from e
     
@@ -219,23 +245,19 @@ class GraphStore:
         self.ensure_initialized()
         
         try:
-            # Find matching entity vertices
-            matches = self.graph.get_vertices(
-                properties={"text": entity_text}
-            )
+            # Start with vertices having matching text
+            query = self.graph.g.V().has("text", entity_text)
             
-            documents = []
-            for match in matches:
-                # Get connected documents
-                docs = self.graph.get_neighbors(
-                    vertex_id=match["id"],
-                    direction="in",
-                    edge_label="CONTAINS",
-                    limit=limit
-                )
-                documents.extend(docs)
+            # Get incoming CONTAINS edges from documents
+            query = query.in_("CONTAINS")
             
-            return documents[:limit] if limit else documents
+            # Limit results if specified
+            if limit:
+                query = query.limit(limit)
+            
+            # Get document properties
+            results = query.valueMap(True).toList()
+            return results
             
         except Exception as e:
             raise Exception(f"Failed to get documents for entity {entity_text}: {str(e)}") from e
