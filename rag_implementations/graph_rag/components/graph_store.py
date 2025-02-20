@@ -12,17 +12,14 @@ class GraphStore:
 
     def __init__(
         self,
-        cluster_name: str = "default-graph-rag",
-        enable_audit: bool = True
+        cluster_name: str = "default-graph-rag"
     ):
         """Initialize graph store.
 
         Args:
             cluster_name: Name of Neptune cluster
-            enable_audit: Whether to enable audit logging
         """
         self.cluster_name = cluster_name
-        self.enable_audit = enable_audit
         self._initialized = False
         self.neptune_manager = None  # Initialize to None
         self.graph = None
@@ -44,8 +41,8 @@ class GraphStore:
         print("Setting up Neptune cluster...")
         self.neptune_manager = NeptuneManager(
             cluster_name=self.cluster_name,
-            enable_audit=self.enable_audit,
-            cleanup_enabled=False  # Never auto-cleanup during initialization
+            cleanup_enabled=False,  # Never auto-cleanup during initialization
+            verbose=True  # Enable logging
         )
         self.endpoint = self.neptune_manager.setup_cluster()
         self._initialized = True
@@ -100,14 +97,8 @@ class GraphStore:
 
             if response['DBClusters']:
                 cluster_info = response['DBClusters'][0]
-                # Check relevant configuration options
-                existing_audit_logs = cluster_info.get('EnabledCloudwatchLogsExports', [])
-                expected_audit_logs = ['audit'] if self.enable_audit else []
-
-                config_matches = (
-                    existing_audit_logs == expected_audit_logs
-                )
-                return config_matches
+                # Just check if cluster exists and is available
+                return cluster_info['Status'] == 'available'
             else:
                 # Cluster doesn't exist
                 return False
