@@ -37,7 +37,7 @@ class EmbeddingsManager:
         """
         try:
             response = self.bedrock.invoke_model(
-                modelId=self.embedding_model_id,
+                modelId=self.model_id,
                 body=json.dumps({
                     "texts": [text],
                     "input_type": "search_query"  # Specify input type for Cohere models
