@@ -35,14 +35,25 @@ class OpenSearchManager:
             response = self.opensearch.describe_domain(DomainName=self.config.domain_name)
             domain_status = response['DomainStatus']
 
-            if domain_status['Processing'] or domain_status.get('Deleted'):
-                self._log(f"Domain '{self.config.domain_name}' is not available.")
+            # If domain exists but is processing, wait for it
+            if domain_status.get('Processing'):
+                self._log(f"Domain '{self.config.domain_name}' exists but is processing")
+                self._wait_for_domain(domain_status['DomainId'])
+                # Get updated status after waiting
+                response = self.opensearch.describe_domain(DomainName=self.config.domain_name)
+                domain_status = response['DomainStatus']
+
+            # Check if domain is deleted
+            if domain_status.get('Deleted'):
+                self._log(f"Domain '{self.config.domain_name}' is marked for deletion.")
                 return None
 
+            # Check if domain is properly configured
             if not self._fix_domain_config(domain_status):
                 self._log("Could not fix domain configuration.")
                 return None
 
+            # Domain exists and is ready
             self.domain_endpoint = domain_status['Endpoint']
             os.environ['OPENSEARCH_HOST'] = self.domain_endpoint  # Set for client use
             self.client = OpenSearchClient(domain_name=self.config.domain_name)  # Initialize client now that we have the host
@@ -50,6 +61,7 @@ class OpenSearchManager:
 
         except ClientError as e:
             if e.response['Error']['Code'] == 'ResourceNotFoundException':
+                self._log(f"Domain '{self.config.domain_name}' does not exist.")
                 return None
             raise
 
@@ -104,8 +116,20 @@ class OpenSearchManager:
                 }
             )
 
-            domain_status = response['CreateDomainResponse']['DomainStatus']
+            # Get domain status from response
+            domain_status = response.get('DomainStatus', {})
+            if not domain_status:
+                domain_status = response.get('CreateDomainResponse', {}).get('DomainStatus', {})
+            
+            if not domain_status:
+                raise ValueError("Failed to get domain status from response")
+
+            # Wait for domain to be ready
             self._wait_for_domain(domain_status['DomainId'])
+            
+            # Get updated status after waiting
+            response = self.opensearch.describe_domain(DomainName=self.config.domain_name)
+            domain_status = response['DomainStatus']
             self.domain_endpoint = domain_status['Endpoint']
             os.environ['OPENSEARCH_HOST'] = self.domain_endpoint  # Set for client use
             self.client = OpenSearchClient(domain_name=self.config.domain_name)  # Initialize client now that we have the host
