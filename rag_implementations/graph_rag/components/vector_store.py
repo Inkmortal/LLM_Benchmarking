@@ -38,122 +38,100 @@ class VectorStore:
         self.index_name = index_name
         self.search_type = search_type
         self.similarity_threshold = similarity_threshold
-        self.index_settings = index_settings
-        self.knn_params = knn_params
+        self.index_settings = index_settings or {}
+        self.knn_params = knn_params or {}
         self.max_retries = max_retries
         self.min_delay = min_delay
         self.max_delay = max_delay
         
-        # Track component state
-        self._initialized = False
-        self.opensearch = None
+        # Initialize OpenSearch client
+        self._init_client()
         
-        # Initialize OpenSearch
-        self._init_vector_store()
+        # Ensure index exists
+        self._create_index_if_not_exists()
     
-    def _get_domain_name(self) -> str:
-        """Get consistent domain name for benchmarking."""
-        return "graph-rag-benchmark-store"  # More specific name for graph RAG
+    def _init_client(self):
+        """Initialize OpenSearch client."""
+        # Get OpenSearch host from environment
+        self.opensearch_host = os.getenv('OPENSEARCH_HOST')
+        if not self.opensearch_host:
+            raise ValueError("OPENSEARCH_HOST environment variable is required")
+        
+        # Get AWS credentials for auth
+        credentials = boto3.Session().get_credentials()
+        region = boto3.Session().region_name
+        self.awsauth = AWS4Auth(
+            credentials.access_key,
+            credentials.secret_key,
+            region,
+            'es',
+            session_token=credentials.token
+        )
+        
+        # Initialize OpenSearch client
+        self.opensearch = OpenSearch(
+            hosts=[{'host': self.opensearch_host, 'port': 443}],
+            http_auth=self.awsauth,
+            use_ssl=True,
+            verify_certs=True,
+            connection_class=RequestsHttpConnection,
+            timeout=60,
+            max_retries=10,
+            retry_on_timeout=True
+        )
     
-    def _init_vector_store(self):
-        """Initialize OpenSearch vector store."""
-        try:
-            # Get OpenSearch host from environment
-            opensearch_host = os.getenv('OPENSEARCH_HOST')
-            if not opensearch_host:
-                raise ValueError("OPENSEARCH_HOST environment variable is required")
-            
-            # Get AWS credentials for auth
-            credentials = boto3.Session().get_credentials()
-            region = boto3.Session().region_name
-            awsauth = AWS4Auth(
-                credentials.access_key,
-                credentials.secret_key,
-                region,
-                'es',
-                session_token=credentials.token
-            )
-            
-            # Initialize OpenSearch client
-            self.opensearch = OpenSearch(
-                hosts=[{'host': opensearch_host, 'port': 443}],
-                http_auth=awsauth,
-                use_ssl=True,
-                verify_certs=True,
-                connection_class=RequestsHttpConnection,
-                timeout=60,
-                max_retries=10,
-                retry_on_timeout=True
-            )
-            
-            # Create index if it doesn't exist
-            if not self.opensearch.indices.exists(self.index_name):
-                self._create_index()
-            
-            self._initialized = True
-            
-        except Exception as e:
-            raise Exception(f"Failed to initialize vector store: {str(e)}") from e
-    
-    def _create_index(self):
-        """Create OpenSearch index with vector mapping."""
-        # Default settings for vector search
-        settings = {
-            'index': {
-                'number_of_shards': 1,
-                'number_of_replicas': 0,
-                'knn': {
-                    'algo_param': {
-                        'ef_search': 512  # Higher values = more accurate but slower
+    def _create_index_if_not_exists(self):
+        """Create OpenSearch index with appropriate mapping and settings."""
+        if not self.opensearch.indices.exists(self.index_name):
+            # Default settings
+            settings = {
+                'index': {
+                    'number_of_shards': 1,
+                    'number_of_replicas': 0,
+                    'knn': {
+                        'algo_param': {
+                            'ef_search': 512  # Higher values = more accurate but slower
+                        }
                     }
                 }
             }
-        }
-        
-        # Default mapping for vector field
-        mapping = {
-            'properties': {
-                'embedding': {
-                    'type': 'knn_vector',
-                    'dimension': 1024,  # Cohere embedding dimension (fixed from 1536)
-                    'method': {
-                        'name': 'hnsw',
-                        'space_type': 'cosinesimil',
-                        'engine': 'nmslib',
-                        'parameters': {
-                            'ef_construction': 512,
-                            'm': 16
-                        }
-                    }
-                },
-                'content': {'type': 'text'},
-                'metadata': {'type': 'object'}
-            }
-        }
-        
-        # Override with custom settings if provided
-        if self.index_settings:
+            
+            # Update with custom settings
             settings.update(self.index_settings)
-        
-        # Override k-NN parameters if provided
-        if self.knn_params:
-            mapping['properties']['embedding']['method']['parameters'].update(self.knn_params)
-        
-        # Create index
-        self.opensearch.indices.create(
-            index=self.index_name,
-            body={
-                'settings': settings,
-                'mappings': mapping
+            
+            # Default mapping for vector field
+            mapping = {
+                'properties': {
+                    'embedding': {
+                        'type': 'knn_vector',
+                        'dimension': 1024,  # Cohere embedding dimension
+                        'method': {
+                            'name': 'hnsw',
+                            'space_type': 'cosinesimil',
+                            'engine': 'nmslib',
+                            'parameters': {
+                                'ef_construction': 512,
+                                'm': 16
+                            }
+                        }
+                    },
+                    'content': {'type': 'text'},
+                    'metadata': {'type': 'object'}
+                }
             }
-        )
-    
-    def ensure_initialized(self):
-        """Ensure vector store is properly initialized."""
-        if not self._initialized:
-            raise RuntimeError("VectorStore not properly initialized")
-        if not self.opensearch:
-            raise RuntimeError("OpenSearch client not available")
+            
+            # Update k-NN parameters if provided
+            if self.knn_params:
+                mapping['properties']['embedding']['method']['parameters'].update(self.knn_params)
+            
+            # Create index
+            self.opensearch.indices.create(
+                index=self.index_name,
+                body={
+                    'settings': settings,
+                    'mappings': mapping
+                }
+            )
     
     def _invoke_with_retry(self, operation, *args, **kwargs):
         """Execute operation with exponential backoff retry.
@@ -196,8 +174,6 @@ class VectorStore:
             documents: List of documents with content, vector, and optional metadata
             batch_size: Number of documents to process in each batch
         """
-        self.ensure_initialized()
-        
         actions = []
         for doc in documents:
             if 'content' not in doc or 'vector' not in doc:
@@ -238,8 +214,6 @@ class VectorStore:
             vector: Vector embedding
             metadata: Optional document metadata
         """
-        self.ensure_initialized()
-        
         # Store as single document using bulk operation for consistency
         self.store_documents([{
             'content': content,
@@ -261,8 +235,6 @@ class VectorStore:
         Returns:
             List of document data with scores
         """
-        self.ensure_initialized()
-        
         try:
             if self.search_type == 'knn':
                 # Use k-NN search
@@ -319,18 +291,14 @@ class VectorStore:
             raise Exception(f"Failed to search: {str(e)}") from e
     
     def cleanup(self, delete_resources: bool = False):
-        """Clean up all resources.
+        """Clean up resources.
         
         Args:
-            delete_resources: Whether to delete OpenSearch domain
+            delete_resources: Whether to delete OpenSearch domain (ignored, use OpenSearchManager instead)
         """
-        if self.opensearch:
-            try:
-                # Delete index if it exists
-                if self.opensearch.indices.exists(index=self.index_name):
-                    self.opensearch.indices.delete(index=self.index_name)
-            except:
-                pass  # Best effort cleanup
-            self.opensearch = None
-            
-        self._initialized = False
+        try:
+            # Delete index if it exists
+            if self.opensearch.indices.exists(index=self.index_name):
+                self.opensearch.indices.delete(index=self.index_name)
+        except:
+            pass  # Best effort cleanup
