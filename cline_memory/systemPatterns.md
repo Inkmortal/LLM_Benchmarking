@@ -53,22 +53,43 @@ Best Practices:
 - Implement proper retries
 - Handle failures gracefully
 
-### 4. Testing Pattern
+### 4. VPC Resource Management Pattern
 ```mermaid
 flowchart TD
-    Start[Start] --> CLI[Use CLI Script]
-    CLI -->|Success| Done[Done]
-    CLI -->|Failure| Log[Log Error]
-    Log --> Analyze[Analyze]
-    Analyze --> Fix[Fix Issue]
-    Fix --> CLI
+    Start[Start] --> Check[Check VPC]
+    Check -->|Exists| Validate[Validate Components]
+    Check -->|Missing| Create[Create VPC]
+    Validate -->|Missing| Add[Add Missing Components]
+    Validate -->|Invalid| Fix[Fix Configuration]
+    Validate -->|Valid| Use[Use VPC]
+    Add --> Use
+    Fix --> Use
+    Create --> Use
 ```
 
-Guidelines:
-- Prefer CLI script over notebook
-- Maintain state properly
-- Log errors clearly
-- Handle recovery gracefully
+Key Principles:
+- Never delete existing VPC resources
+- Only add missing components
+- Fix invalid configurations
+- Preserve existing routes
+
+### 5. NAT Gateway Management Pattern
+```mermaid
+flowchart TD
+    Start[Start] --> Check[Check NAT Gateway]
+    Check -->|Working| Use[Use Existing]
+    Check -->|Missing| Create[Create New]
+    Check -->|Invalid| Replace[Replace NAT]
+    Create --> Route[Update Routes]
+    Replace --> Route
+    Route --> Validate[Validate Connectivity]
+```
+
+Critical Points:
+- Validate existing NAT Gateway first
+- Create in public subnet only
+- Update private subnet routes
+- Verify connectivity after changes
 
 ## AWS Service Quirks
 
@@ -83,6 +104,12 @@ Guidelines:
 - DNS propagation important
 - Security group rules matter
 - Route table configuration key
+
+### 3. VPC Management
+- Never delete existing VPCs
+- Always preserve NAT Gateways
+- Update routes carefully
+- Validate before changes
 
 ## Testing Strategies
 
@@ -126,6 +153,25 @@ def test_connection():
     except Exception as e:
         log_error(e)
         return handle_failure()
+```
+
+### 4. VPC Validation
+```python
+def validate_vpc():
+    """Validate VPC configuration."""
+    # Check NAT Gateway
+    nat = check_nat_gateway()
+    if not nat.working:
+        if nat.exists:
+            return fix_nat_gateway()
+        return create_nat_gateway()
+    
+    # Check routes
+    routes = check_route_tables()
+    if not routes.valid:
+        return update_routes()
+    
+    return True
 ```
 
 ## Error Handling
@@ -193,3 +239,15 @@ def test_connection():
 - Note common issues
 - Include recovery procedures
 - Track stability concerns
+
+### 4. VPC Management
+- Never delete existing VPCs
+- Preserve NAT Gateways
+- Update routes carefully
+- Validate before changes
+
+### 5. Resource Dependencies
+- Check component relationships
+- Understand impact of changes
+- Preserve working configurations
+- Add rather than replace

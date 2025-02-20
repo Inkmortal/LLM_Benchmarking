@@ -1,10 +1,13 @@
 """Vector storage using OpenSearch for graph RAG."""
 
 import os
+import time
+import random
 import boto3
 from typing import Dict, Any, List, Optional
-from opensearchpy import OpenSearch, RequestsHttpConnection
+from opensearchpy import OpenSearch, RequestsHttpConnection, helpers
 from requests_aws4auth import AWS4Auth
+from botocore.exceptions import ClientError
 from utils.aws.opensearch_utils import OpenSearchManager
 
 class VectorStore:
@@ -16,7 +19,10 @@ class VectorStore:
         search_type: str = 'script',
         similarity_threshold: Optional[float] = None,
         index_settings: Optional[Dict] = None,
-        knn_params: Optional[Dict] = None
+        knn_params: Optional[Dict] = None,
+        max_retries: int = 5,
+        min_delay: float = 1.0,
+        max_delay: float = 60.0
     ):
         """Initialize vector store.
         
@@ -26,12 +32,18 @@ class VectorStore:
             similarity_threshold: Minimum similarity score to include
             index_settings: Custom index settings
             knn_params: Parameters for k-NN algorithm
+            max_retries: Maximum number of retry attempts
+            min_delay: Minimum delay between retries in seconds
+            max_delay: Maximum delay between retries in seconds
         """
         self.index_name = index_name
         self.search_type = search_type
         self.similarity_threshold = similarity_threshold
         self.index_settings = index_settings
         self.knn_params = knn_params
+        self.max_retries = max_retries
+        self.min_delay = min_delay
+        self.max_delay = max_delay
         
         # Track component state
         self._initialized = False
@@ -131,9 +143,9 @@ class VectorStore:
         # Default mapping for vector field
         mapping = {
             'properties': {
-                'vector': {
+                'embedding': {  # Changed from 'vector' to 'embedding' to match baseline
                     'type': 'knn_vector',
-                    'dimension': 1536,  # OpenAI embedding size
+                    'dimension': 1536,  # Cohere embedding size
                     'method': {
                         'name': 'hnsw',
                         'space_type': 'cosinesimil',
@@ -155,7 +167,7 @@ class VectorStore:
         
         # Override k-NN parameters if provided
         if self.knn_params:
-            mapping['properties']['vector']['method']['parameters'].update(self.knn_params)
+            mapping['properties']['embedding']['method']['parameters'].update(self.knn_params)
         
         # Create index
         self.opensearch.indices.create(
@@ -173,6 +185,74 @@ class VectorStore:
         if not self.opensearch:
             raise RuntimeError("OpenSearch client not available")
     
+    def _invoke_with_retry(self, operation, *args, **kwargs):
+        """Execute operation with exponential backoff retry.
+        
+        Args:
+            operation: Function to execute
+            *args: Positional arguments for operation
+            **kwargs: Keyword arguments for operation
+            
+        Returns:
+            Operation result
+            
+        Raises:
+            Exception: If max retries exceeded
+        """
+        last_exception = None
+        for attempt in range(self.max_retries):
+            try:
+                return operation(*args, **kwargs)
+            except Exception as e:
+                last_exception = e
+                if attempt == self.max_retries - 1:
+                    raise
+                # Exponential backoff with jitter
+                delay = min(
+                    self.max_delay,
+                    self.min_delay * (2 ** attempt) + random.uniform(0, 1)
+                )
+                time.sleep(delay)
+        raise last_exception
+    
+    def store_documents(
+        self,
+        documents: List[Dict[str, Any]],
+        batch_size: int = 100
+    ) -> None:
+        """Store multiple documents with vectors.
+        
+        Args:
+            documents: List of documents with content, vector, and optional metadata
+            batch_size: Number of documents to process in each batch
+        """
+        self.ensure_initialized()
+        
+        actions = []
+        for doc in documents:
+            if 'content' not in doc or 'vector' not in doc:
+                raise ValueError("Each document must have 'content' and 'vector' fields")
+            
+            # Prepare document for indexing
+            action = {
+                '_index': self.index_name,
+                '_source': {
+                    'content': doc['content'],
+                    'embedding': doc['vector'],  # Map 'vector' to 'embedding'
+                    'metadata': doc.get('metadata', {})
+                }
+            }
+            actions.append(action)
+            
+            # Bulk index when batch is full
+            if len(actions) >= batch_size:
+                self._invoke_with_retry(helpers.bulk, self.opensearch, actions)
+                actions = []
+        
+        # Index any remaining documents
+        if actions:
+            self._invoke_with_retry(helpers.bulk, self.opensearch, actions)
+    
     def store_document(
         self,
         doc_id: str,
@@ -180,7 +260,7 @@ class VectorStore:
         vector: List[float],
         metadata: Optional[Dict[str, Any]] = None
     ) -> None:
-        """Store document with vector embedding.
+        """Store single document with vector embedding.
         
         Args:
             doc_id: Document identifier
@@ -190,19 +270,12 @@ class VectorStore:
         """
         self.ensure_initialized()
         
-        try:
-            # Store document with vector
-            self.opensearch.index(
-                index=self.index_name,
-                id=doc_id,
-                body={
-                    'content': content,
-                    'vector': vector,
-                    'metadata': metadata or {}
-                }
-            )
-        except Exception as e:
-            raise Exception(f"Failed to store document {doc_id}: {str(e)}") from e
+        # Store as single document using bulk operation for consistency
+        self.store_documents([{
+            'content': content,
+            'vector': vector,
+            'metadata': metadata or {}
+        }])
     
     def search(
         self,
@@ -227,7 +300,7 @@ class VectorStore:
                     'size': k,
                     'query': {
                         'knn': {
-                            'vector': {
+                            'embedding': {  # Changed from 'vector' to 'embedding'
                                 'vector': query_vector,
                                 'k': k
                             }
@@ -242,7 +315,7 @@ class VectorStore:
                         'script_score': {
                             'query': {'match_all': {}},
                             'script': {
-                                'source': "cosineSimilarity(params.query_vector, 'vector') + 1.0",
+                                'source': "cosineSimilarity(params.query_vector, 'embedding') + 1.0",  # Changed field name
                                 'params': {'query_vector': query_vector}
                             }
                         }
@@ -253,8 +326,9 @@ class VectorStore:
                 if self.similarity_threshold:
                     body['min_score'] = self.similarity_threshold
             
-            # Execute search
-            response = self.opensearch.search(
+            # Execute search with retry
+            response = self._invoke_with_retry(
+                self.opensearch.search,
                 index=self.index_name,
                 body=body
             )

@@ -2,6 +2,25 @@
 
 ## Current Focus: AWS Service Connectivity
 
+### VPC Management Strategy
+1. Resource Preservation
+   - Never delete existing VPCs
+   - Preserve NAT Gateways
+   - Only add missing components
+   - Fix invalid configurations
+
+2. NAT Gateway Handling
+   - Validate existing NAT Gateway first
+   - Create in public subnet if needed
+   - Update private subnet routes
+   - Verify connectivity after changes
+
+3. Route Table Management
+   - Check existing routes
+   - Update carefully
+   - Validate after changes
+   - Ensure proper internet access
+
 ### Neptune Connection Strategy
 1. Infrastructure Management
    - Always validate before modifying
@@ -42,6 +61,25 @@
 
 ## Recent Changes
 
+### VPC Infrastructure
+1. NAT Gateway Management:
+   - Added validation checks
+   - Improved route updates
+   - Fixed connectivity issues
+   - Preserved existing resources
+
+2. Route Table Handling:
+   - Better route validation
+   - Careful updates
+   - Connectivity verification
+   - Resource preservation
+
+3. Resource Management:
+   - Never delete VPCs
+   - Preserve NAT Gateways
+   - Fix invalid configs
+   - Add missing components
+
 ### Neptune Integration
 1. Infrastructure Management:
    - Added configuration validation
@@ -64,10 +102,10 @@
 ## Active Decisions
 
 1. Resource Management
-   - Validate before modifying
+   - Never delete VPCs
+   - Preserve NAT Gateways
    - Fix configurations first
-   - Cleanup as last resort
-   - Require explicit cleanup
+   - Add missing components
 
 2. Testing Strategy
    - Use CLI script primarily

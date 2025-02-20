@@ -4,31 +4,31 @@
 
 ### Active Files
 1. `activeContext.md`
-   - Last Updated: 2025-02-16
-   - Focus: AWS Service Connectivity
+   - Last Updated: 2025-02-19
+   - Focus: VPC and NAT Gateway Management
    - Key Topics:
-     - OpenSearch connection fixes
-     - Neptune connection issues
-     - Resource management
-     - Next steps
+     - Resource preservation
+     - NAT Gateway handling
+     - Route table management
+     - Neptune connection
 
 2. `progress.md`
-   - Last Updated: 2025-02-16
+   - Last Updated: 2025-02-19
    - Status: Current
    - Tracks:
-     - Completed OpenSearch fixes
-     - Ongoing Neptune issues
+     - VPC infrastructure fixes
+     - NAT Gateway updates
+     - Neptune improvements
      - Known issues
-     - Future work
 
 3. `systemPatterns.md`
-   - Last Updated: 2025-02-16
-   - Content: AWS Service Patterns
+   - Last Updated: 2025-02-19
+   - Content: AWS Infrastructure Patterns
    - Key Sections:
-     - Domain management
-     - Authentication
-     - Connection handling
-     - Error recovery
+     - VPC management
+     - NAT Gateway handling
+     - Resource preservation
+     - Connection patterns
 
 ### Dependencies
 ```mermaid
@@ -40,48 +40,48 @@ flowchart TD
 
 ## Recent Updates
 
-### 2025-02-16
-1. `activeContext.md`
-   - Added AWS service connectivity focus
-   - Documented OpenSearch fixes
-   - Added Neptune connection issues
-   - Updated next steps
+### 2025-02-19
+1. `systemPatterns.md`
+   - Added VPC Resource Management Pattern
+   - Added NAT Gateway Management Pattern
+   - Updated Lessons Learned
+   - Added Resource Dependencies section
 
-2. `progress.md`
-   - Added completed OpenSearch tasks
-   - Updated Neptune connection status
-   - Added known issues
-   - Updated future work
+2. `activeContext.md`
+   - Added VPC Management Strategy
+   - Added NAT Gateway Handling
+   - Updated Recent Changes
+   - Updated Active Decisions
 
-3. `systemPatterns.md`
-   - Added AWS service patterns
-   - Added connection strategies
-   - Added error handling
-   - Added lessons learned
+3. `progress.md`
+   - Added VPC Infrastructure section
+   - Updated Known Issues
+   - Added VPC Management to Future Work
+   - Updated Current Issues
 
 ## Task-Relevant Files
 
-### AWS Service Integration
+### AWS Infrastructure Management
 1. Primary:
-   - `systemPatterns.md`: Connection patterns
-   - `activeContext.md`: Current issues
-   - `progress.md`: Status tracking
+   - `systemPatterns.md`: VPC and NAT patterns
+   - `activeContext.md`: Current strategy
+   - `progress.md`: Implementation status
 
 2. Supporting:
-   - `utils/aws/neptune_utils.py`
-   - `utils/aws/opensearch_utils.py`
-   - `rag_implementations/graph_rag/components/vector_store.py`
+   - `utils/aws/neptune/vpc.py`
+   - `utils/aws/neptune/cluster.py`
+   - `utils/aws/neptune/__init__.py`
 
 ### Implementation Status
-1. OpenSearch:
+1. VPC Management:
    - Status: Fixed
-   - Location: vector_store.py
-   - Pattern: systemPatterns.md#Connection
+   - Location: vpc.py
+   - Pattern: systemPatterns.md#VPC
 
 2. Neptune:
-   - Status: Investigating
-   - Location: neptune_utils.py
-   - Issues: activeContext.md#Issues
+   - Status: Updated
+   - Location: cluster.py
+   - Pattern: systemPatterns.md#Connection
 
 ## Documentation Structure
 
@@ -95,25 +95,28 @@ flowchart TD
     Code -->|Updates| PR
 ```
 
-### Error Handling
+### Resource Management
 ```mermaid
 flowchart TD
-    Error[Error Occurs] --> SP[systemPatterns.md]
-    SP -->|Pattern| Handle[Handle Error]
-    Handle --> AC[activeContext.md]
-    AC --> PR[progress.md]
+    Check[Check Resources] --> Validate[Validate]
+    Validate -->|Valid| Use[Use Existing]
+    Validate -->|Invalid| Fix[Fix Configuration]
+    Fix -->|Success| Use
+    Fix -->|Failure| Add[Add Missing]
 ```
 
 ## Memory Organization
 
 ### AWS Services
-1. Connection Management
-   - Patterns in systemPatterns.md
-   - Current issues in activeContext.md
-   - Progress in progress.md
+1. Resource Management
+   - VPC patterns
+   - NAT Gateway handling
+   - Route table updates
+   - Resource preservation
 
-2. Resource Management
-   - Cleanup patterns
+2. Connection Management
+   - Infrastructure validation
+   - Configuration fixes
    - DNS handling
    - Auth configuration
 
@@ -130,15 +133,15 @@ flowchart TD
 3. `systemPatterns.md`: When patterns emerge
 
 ### Trigger Events
-1. New AWS service issues
+1. Infrastructure changes
 2. Pattern discoveries
-3. Implementation changes
+3. Implementation updates
 4. Error resolutions
 
 ## Next Review
-- Focus: Neptune connection issues
+- Focus: VPC validation improvements
 - Files to update:
   - activeContext.md
   - progress.md
   - systemPatterns.md
-- When: After connection fix
+- When: After next infrastructure change
