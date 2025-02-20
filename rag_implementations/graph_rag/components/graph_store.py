@@ -66,7 +66,7 @@ class GraphStore:
                     'us-west-2',
                     'neptune-db',
                     session_token=creds.token
-                ).get_headers()['Authorization']
+                ).get_authorization_header()
             }
         )
         print("Connected to Neptune")

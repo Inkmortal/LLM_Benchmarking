@@ -281,7 +281,7 @@ class OpenSearchManager:
                 },
                 OffPeakWindowOptions={
                     'Enabled': True,
-                    'Window': {
+                    'OffPeakWindow': {
                         'WindowStartTime': {
                             'Hours': 2,  # 2 AM
                             'Minutes': 0
