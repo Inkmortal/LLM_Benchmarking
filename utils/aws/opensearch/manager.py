@@ -104,8 +104,9 @@ class OpenSearchManager:
                 }
             )
 
-            self._wait_for_domain(response['DomainStatus']['DomainId'])
-            self.domain_endpoint = response['DomainStatus']['Endpoint']
+            domain_status = response['CreateDomainResponse']['DomainStatus']
+            self._wait_for_domain(domain_status['DomainId'])
+            self.domain_endpoint = domain_status['Endpoint']
             os.environ['OPENSEARCH_HOST'] = self.domain_endpoint  # Set for client use
             self.client = OpenSearchClient(domain_name=self.config.domain_name)  # Initialize client now that we have the host
             self._log(f"Domain created: {self.config.domain_name}")
@@ -123,19 +124,19 @@ class OpenSearchManager:
         while True:
             try:
                 response = self.opensearch.describe_domain(DomainName=self.config.domain_name)
-                status = response['DomainStatus']['DomainStatus']
-                if status == 'Active':
+                domain_status = response['DomainStatus']
+                if domain_status.get('Deleted'):
+                    raise Exception(f"Domain is being deleted: {domain_id}")
+                elif domain_status.get('Processing'):
+                    self._log("Domain is still processing")
+                    time.sleep(30)
+                elif domain_status.get('Endpoint'):
                     self._log("Domain is available")
                     return
-                elif status == 'Processing':
-                    self._log(f"Domain status: {status}")
-                    time.sleep(30)
-                elif status == 'Deleting':
-                    raise Exception(f"Domain is being deleted: {domain_id}")
                 elif time.time() - start_time > timeout:
                     raise Exception(f"Timeout waiting for domain: {domain_id}")
                 else:
-                    self._log(f"Domain status: {status}")
+                    self._log("Waiting for domain to be ready...")
                     time.sleep(30)
 
             except ClientError as e:
