@@ -280,7 +280,13 @@ class OpenSearchManager:
                     'TLSSecurityPolicy': 'Policy-Min-TLS-1-2-2019-07'
                 },
                 OffPeakWindowOptions={
-                    'Enabled': False
+                    'Enabled': True,
+                    'Window': {
+                        'WindowStartTime': {
+                            'Hours': 2,  # 2 AM
+                            'Minutes': 0
+                        }
+                    }
                 }
             )
 

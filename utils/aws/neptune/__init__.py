@@ -5,7 +5,7 @@ Neptune database management utilities.
 import boto3
 from typing import Optional
 from .vpc import VPCManager
-from .cluster import ClusterManager
+from .cluster import NeptuneManager as ClusterManager  # Temporary alias for backward compatibility
 from .graph import NeptuneGraph
 
 class NeptuneManager:
@@ -43,10 +43,11 @@ class NeptuneManager:
             verbose=verbose
         )
         
-        self.cluster = ClusterManager(
+        self.cluster = NeptuneManager(
             cluster_name=cluster_name,
             session=self.session,
-            verbose=verbose
+            verbose=verbose,
+            cleanup_enabled=cleanup_enabled
         )
         
         # Store configuration
