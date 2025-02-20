@@ -21,7 +21,8 @@ class VectorStore:
         knn_params: Optional[Dict] = None,
         max_retries: int = 5,
         min_delay: float = 1.0,
-        max_delay: float = 60.0
+        max_delay: float = 60.0,
+        embedding_model_id: str = "cohere.embed-english-v3"
     ):
         """Initialize vector store.
         
@@ -43,6 +44,10 @@ class VectorStore:
         self.max_retries = max_retries
         self.min_delay = min_delay
         self.max_delay = max_delay
+        
+        # Initialize Bedrock client for embeddings
+        self.bedrock = boto3.client('bedrock-runtime')
+        self.embedding_model_id = embedding_model_id
         
         # Initialize OpenSearch client
         self._init_client()
@@ -199,11 +204,34 @@ class VectorStore:
         if actions:
             self._invoke_with_retry(helpers.bulk, self.opensearch, actions)
     
+    def get_embedding(self, text: str) -> List[float]:
+        """Get embedding vector for text using Bedrock.
+        
+        Args:
+            text: Text to embed
+            
+        Returns:
+            Vector embedding
+        """
+        try:
+            response = self._invoke_with_retry(
+                self.bedrock.invoke_model,
+                modelId=self.embedding_model_id,
+                body=json.dumps({
+                    "texts": [text],
+                    "input_type": "search_query"
+                })
+            )
+            embeddings = json.loads(response['body'].read())['embeddings']
+            return embeddings[0]
+        except Exception as e:
+            raise Exception(f"Failed to get embedding: {str(e)}") from e
+    
     def store_document(
         self,
         doc_id: str,
         content: str,
-        vector: List[float],
+        vector: Optional[List[float]] = None,
         metadata: Optional[Dict[str, Any]] = None
     ) -> None:
         """Store single document with vector embedding.
@@ -214,6 +242,10 @@ class VectorStore:
             vector: Vector embedding
             metadata: Optional document metadata
         """
+        # Get embedding if not provided
+        if vector is None:
+            vector = self.get_embedding(content)
+            
         # Store as single document using bulk operation for consistency
         self.store_documents([{
             'content': content,
