@@ -151,7 +151,7 @@ class GraphStore:
             doc_vertex = self.graph.addV("Document").property("id", doc_id)
             for key, value in {**metadata, "content": content}.items():
                 doc_vertex = doc_vertex.property(key, value)
-            doc_vertex_id = doc_vertex.next().id()
+            doc_vertex_id = doc_vertex.id().next()
 
             # Track created entity vertices
             entity_vertices = {}
@@ -171,7 +171,7 @@ class GraphStore:
                         "frequency": entity["frequency"]
                     }.items():
                         entity_vertex = entity_vertex.property(key, value)
-                    entity_vertices[entity_id] = entity_vertex.next().id()
+                    entity_vertices[entity_id] = entity_vertex.id().next()
 
                 # Link entity to document
                 # Add edge from document to entity
