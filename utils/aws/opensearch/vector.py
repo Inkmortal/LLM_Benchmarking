@@ -3,6 +3,7 @@
 import time
 import random
 from typing import Dict, Any, List, Optional
+from tqdm.notebook import tqdm as tqdm_notebook
 from .types import VectorSearchConfig
 from .client import OpenSearchClient
 from .index import OpenSearchIndexManager
@@ -120,45 +121,98 @@ class VectorStore:
             documents: List of documents with content, vector, and optional metadata
             batch_size: Number of documents to process in each batch
         """
-        total_batches = (len(documents) + batch_size - 1) // batch_size
-        actions = []
+        # Validate documents first
+        valid_docs = []
+        invalid_count = 0
+        
+        print("Validating documents...")
+        for doc in documents:
+            if 'content' not in doc or 'vector' not in doc:
+                print(f"Invalid document: missing required fields")
+                invalid_count += 1
+                continue
+                
+            if not doc['content'] or not doc['vector']:
+                print(f"Invalid document: empty content or vector")
+                invalid_count += 1
+                continue
+                
+            if len(doc['vector']) != 1024:  # Cohere embedding dimension
+                print(f"Invalid document: incorrect vector dimension {len(doc['vector'])}")
+                invalid_count += 1
+                continue
+                
+            valid_docs.append(doc)
+        
+        if invalid_count > 0:
+            print(f"Found {invalid_count} invalid documents that will be skipped")
+            
+        if not valid_docs:
+            print("No valid documents to store")
+            return
+            
+        print(f"Storing {len(valid_docs)} valid documents...")
+        
+        # Process in batches
+        total_batches = (len(valid_docs) + batch_size - 1) // batch_size
+        success_count = 0
+        failure_count = 0
         
         with tqdm_notebook(total=total_batches, desc="Storing documents") as pbar:
-            for i in range(0, len(documents), batch_size):
-                batch = documents[i:i + batch_size]
+            for i in range(0, len(valid_docs), batch_size):
+                batch = valid_docs[i:i + batch_size]
+                batch_num = (i//batch_size) + 1
                 
-                # Process batch
+                # Prepare batch actions
+                actions = []
                 for doc in batch:
-                    if 'content' not in doc or 'vector' not in doc:
-                        raise ValueError("Each document must have 'content' and 'vector' fields")
-
-                    # Prepare document for indexing
                     action = {
                         '_index': self.index_name,
                         '_source': {
                             'content': doc['content'],
-                            'embedding': doc['vector'],  # Map 'vector' to 'embedding'
+                            'embedding': doc['vector'],
                             'metadata': doc.get('metadata', {})
                         }
                     }
                     actions.append(action)
 
-                # Bulk index batch
-                try:
-                    self._invoke_with_retry(self.client.bulk_index, actions)
-                    pbar.set_postfix({
-                        'Status': 'Success',
-                        'Batch': f"{(i//batch_size)+1}/{total_batches}"
-                    })
-                except Exception as e:
-                    pbar.set_postfix({
-                        'Status': f'Error: {type(e).__name__}',
-                        'Batch': f"{(i//batch_size)+1}/{total_batches}"
-                    })
-                    raise
+                # Bulk index with retry
+                for attempt in range(self.config.max_retries):
+                    try:
+                        self._invoke_with_retry(self.client.bulk_index, actions)
+                        success_count += len(batch)
+                        pbar.set_postfix({
+                            'Status': 'Success',
+                            'Batch': f"{batch_num}/{total_batches}",
+                            'Success': success_count,
+                            'Failed': failure_count
+                        })
+                        break
+                    except Exception as e:
+                        if attempt == self.config.max_retries - 1:
+                            failure_count += len(batch)
+                            pbar.set_postfix({
+                                'Status': f'Error: {type(e).__name__}',
+                                'Batch': f"{batch_num}/{total_batches}",
+                                'Success': success_count,
+                                'Failed': failure_count
+                            })
+                            print(f"\nError storing batch {batch_num}: {str(e)}")
+                        else:
+                            pbar.set_postfix({
+                                'Status': f'Retry {attempt+1}/{self.config.max_retries}',
+                                'Batch': f"{batch_num}/{total_batches}",
+                                'Success': success_count,
+                                'Failed': failure_count
+                            })
+                            time.sleep(self.config.min_delay * (2 ** attempt))
+                            continue
                 
-                actions = []  # Clear actions for next batch
                 pbar.update(1)
+        
+        print(f"\nStorage complete:")
+        print(f"Successfully stored: {success_count} documents")
+        print(f"Failed to store: {failure_count} documents")
 
     def search(
         self,
@@ -175,6 +229,10 @@ class VectorStore:
             List of document data with scores
         """
         try:
+            # Validate query vector
+            if not query_vector or len(query_vector) != 1024:
+                raise ValueError(f"Invalid query vector dimension: {len(query_vector) if query_vector else 0}")
+
             if self.config.search_type == 'knn':
                 # Use k-NN search
                 body = {
@@ -231,7 +289,8 @@ class VectorStore:
             return results
 
         except Exception as e:
-            raise Exception(f"Failed to search: {str(e)}") from e
+            print(f"Search failed: {str(e)}")
+            return []
 
     def cleanup(self, delete_resources: bool = False):
         """Clean up resources."""
