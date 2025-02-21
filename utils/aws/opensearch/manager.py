@@ -145,43 +145,55 @@ class OpenSearchManager:
         """Wait for domain to be available using polling."""
         self._log("Waiting for domain to be available...")
         start_time = time.time()
-        while True:
-            try:
-                response = self.opensearch.describe_domain(DomainName=self.config.domain_name)
-                domain_status = response['DomainStatus']
-                if domain_status.get('Deleted'):
-                    raise Exception(f"Domain is being deleted: {domain_id}")
-                elif domain_status.get('Processing'):
-                    self._log("Domain is still processing")
-                    time.sleep(30)
-                elif domain_status.get('Endpoint'):
-                    self._log("Domain is available")
-                    return
-                elif time.time() - start_time > timeout:
-                    raise Exception(f"Timeout waiting for domain: {domain_id}")
-                else:
-                    self._log("Waiting for domain to be ready...")
-                    time.sleep(30)
+        steps = timeout // 30  # Update every 30 seconds
+        
+        with tqdm_notebook(total=steps, desc="Waiting for domain") as pbar:
+            while True:
+                try:
+                    response = self.opensearch.describe_domain(DomainName=self.config.domain_name)
+                    domain_status = response['DomainStatus']
+                    
+                    if domain_status.get('Deleted'):
+                        raise Exception(f"Domain is being deleted: {domain_id}")
+                    elif domain_status.get('Processing'):
+                        pbar.set_postfix({'Status': 'Processing'})
+                        time.sleep(30)
+                        pbar.update(1)
+                    elif domain_status.get('Endpoint'):
+                        pbar.set_postfix({'Status': 'Available'})
+                        self._log("Domain is available")
+                        return
+                    elif time.time() - start_time > timeout:
+                        raise Exception(f"Timeout waiting for domain: {domain_id}")
+                    else:
+                        pbar.set_postfix({'Status': 'Initializing'})
+                        time.sleep(30)
+                        pbar.update(1)
 
-            except ClientError as e:
-                if e.response['Error']['Code'] == 'ResourceNotFoundException':
-                    raise Exception(f"Domain not found: {domain_id}")
-                raise
+                except ClientError as e:
+                    if e.response['Error']['Code'] == 'ResourceNotFoundException':
+                        raise Exception(f"Domain not found: {domain_id}")
+                    raise
 
     def _check_dns_propagation(self, endpoint: str, timeout: int = 300) -> None:
         """Check if DNS has propagated for endpoint."""
         self._log("Checking DNS propagation...")
         start_time = time.time()
-        while True:
-            try:
-                socket.gethostbyname(endpoint)
-                self._log("DNS resolution successful")
-                return
-            except socket.gaierror:
-                if time.time() - start_time > timeout:
-                    raise Exception(f"DNS propagation timeout for endpoint: {endpoint}")
-                self._log("Waiting for DNS propagation...")
-                time.sleep(10)  # Check every 10 seconds
+        steps = timeout // 10  # Update every 10 seconds
+        
+        with tqdm_notebook(total=steps, desc="Checking DNS propagation") as pbar:
+            while True:
+                try:
+                    socket.gethostbyname(endpoint)
+                    pbar.set_postfix({'Status': 'Success'})
+                    self._log("DNS resolution successful")
+                    return
+                except socket.gaierror:
+                    if time.time() - start_time > timeout:
+                        raise Exception(f"DNS propagation timeout for endpoint: {endpoint}")
+                    pbar.set_postfix({'Status': 'Waiting'})
+                    time.sleep(10)  # Check every 10 seconds
+                    pbar.update(1)
 
     def cleanup(self) -> None:
         """Clean up domain resources."""
@@ -205,16 +217,21 @@ class OpenSearchManager:
         """Wait for domain deletion to complete."""
         self._log("Waiting for domain deletion...")
         start_time = time.time()
-        while True:
-            try:
-                self.opensearch.describe_domain(DomainName=self.config.domain_name)
-                if time.time() - start_time > timeout:
-                    raise Exception(f"Timeout waiting for domain deletion: {self.config.domain_name}")
-                self._log("Domain still deleting...")
-                time.sleep(30)
+        steps = timeout // 30  # Update every 30 seconds
+        
+        with tqdm_notebook(total=steps, desc="Waiting for domain deletion") as pbar:
+            while True:
+                try:
+                    self.opensearch.describe_domain(DomainName=self.config.domain_name)
+                    if time.time() - start_time > timeout:
+                        raise Exception(f"Timeout waiting for domain deletion: {self.config.domain_name}")
+                    pbar.set_postfix({'Status': 'Deleting'})
+                    time.sleep(30)
+                    pbar.update(1)
 
-            except ClientError as e:
-                if e.response['Error']['Code'] == 'ResourceNotFoundException':
-                    self._log("Domain deleted successfully.")
-                    return
-                raise
+                except ClientError as e:
+                    if e.response['Error']['Code'] == 'ResourceNotFoundException':
+                        pbar.set_postfix({'Status': 'Deleted'})
+                        self._log("Domain deleted successfully.")
+                        return
+                    raise

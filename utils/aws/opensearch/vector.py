@@ -120,30 +120,45 @@ class VectorStore:
             documents: List of documents with content, vector, and optional metadata
             batch_size: Number of documents to process in each batch
         """
+        total_batches = (len(documents) + batch_size - 1) // batch_size
         actions = []
-        for doc in documents:
-            if 'content' not in doc or 'vector' not in doc:
-                raise ValueError("Each document must have 'content' and 'vector' fields")
+        
+        with tqdm_notebook(total=total_batches, desc="Storing documents") as pbar:
+            for i in range(0, len(documents), batch_size):
+                batch = documents[i:i + batch_size]
+                
+                # Process batch
+                for doc in batch:
+                    if 'content' not in doc or 'vector' not in doc:
+                        raise ValueError("Each document must have 'content' and 'vector' fields")
 
-            # Prepare document for indexing
-            action = {
-                '_index': self.index_name,
-                '_source': {
-                    'content': doc['content'],
-                    'embedding': doc['vector'],  # Map 'vector' to 'embedding'
-                    'metadata': doc.get('metadata', {})
-                }
-            }
-            actions.append(action)
+                    # Prepare document for indexing
+                    action = {
+                        '_index': self.index_name,
+                        '_source': {
+                            'content': doc['content'],
+                            'embedding': doc['vector'],  # Map 'vector' to 'embedding'
+                            'metadata': doc.get('metadata', {})
+                        }
+                    }
+                    actions.append(action)
 
-            # Bulk index when batch is full
-            if len(actions) >= batch_size:
-                self._invoke_with_retry(self.client.bulk_index, actions)
-                actions = []
-
-        # Index any remaining documents
-        if actions:
-            self._invoke_with_retry(self.client.bulk_index, actions)
+                # Bulk index batch
+                try:
+                    self._invoke_with_retry(self.client.bulk_index, actions)
+                    pbar.set_postfix({
+                        'Status': 'Success',
+                        'Batch': f"{(i//batch_size)+1}/{total_batches}"
+                    })
+                except Exception as e:
+                    pbar.set_postfix({
+                        'Status': f'Error: {type(e).__name__}',
+                        'Batch': f"{(i//batch_size)+1}/{total_batches}"
+                    })
+                    raise
+                
+                actions = []  # Clear actions for next batch
+                pbar.update(1)
 
     def search(
         self,
