@@ -5,6 +5,7 @@ import random
 from typing import Dict, Any, List, Optional
 from .types import VectorSearchConfig
 from .client import OpenSearchClient
+from .index import OpenSearchIndexManager
 
 class VectorStore:
     """Handles vector storage and search using OpenSearch."""
@@ -25,6 +26,7 @@ class VectorStore:
         self.index_name = index_name
         self.config = config
         self.client = client
+        self.index_manager = OpenSearchIndexManager(client, index_name)
         self._create_index_if_not_exists()
 
     def _get_index_mapping(self):
@@ -53,35 +55,41 @@ class VectorStore:
 
     def _create_index_if_not_exists(self):
         """Create OpenSearch index with appropriate mapping and settings."""
-        if not self.client.index_exists(self.index_name):
-            # Default settings
-            settings = {
-                'index': {
-                    'number_of_shards': 1,
-                    'number_of_replicas': 0,
-                },
-                'knn': {
-                    'algo_param': {
-                        'ef_search': 512  # Higher values = more accurate but slower
-                    }
+        # Default settings
+        settings = {
+            'index': {
+                'number_of_shards': 1,
+                'number_of_replicas': 0,
+            },
+            'knn': {
+                'algo_param': {
+                    'ef_search': 512  # Higher values = more accurate but slower
                 }
             }
+        }
 
-            # Update with custom settings
-            if self.config.index_settings:
-                settings.update(self.config.index_settings)
+        # Update with custom settings
+        if self.config.index_settings:
+            settings.update(self.config.index_settings)
 
-            # Get the mapping
-            mapping = self._get_index_mapping()
+        # Get the mapping
+        mapping = self._get_index_mapping()
 
-            # Update KNN parameters
-            if self.config.knn_params:
-                mapping['properties']['embedding']['method']['parameters'].update(
-                    self.config.knn_params
-                )
+        # Update KNN parameters
+        if self.config.knn_params:
+            mapping['properties']['embedding']['method']['parameters'].update(
+                self.config.knn_params
+            )
 
-            # Create index
-            self.client.create_index(self.index_name, settings, mapping)
+        # Check if index exists and has correct configuration
+        if self.index_manager.index_exists():
+            if not self.index_manager.check_configuration(settings, mapping):
+                print("Index configuration mismatch. Recreating index.")
+                self.index_manager.delete_index()
+                self.index_manager.create_index(settings, mapping)
+        else:
+            # Create new index
+            self.index_manager.create_index(settings, mapping)
 
     def _invoke_with_retry(self, operation, *args, **kwargs):
         """Execute operation with exponential backoff retry."""
@@ -213,7 +221,7 @@ class VectorStore:
     def cleanup(self, delete_resources: bool = False):
         """Clean up resources."""
         try:
-            if self.client.index_exists(self.index_name):
-                self.client.delete_index(self.index_name)
+            if self.index_manager.index_exists():
+                self.index_manager.delete_index()
         except:
             pass  # Best effort cleanup

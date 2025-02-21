@@ -2,10 +2,9 @@
 
 import os
 import boto3
-from typing import Dict, Any, Optional
+from typing import List, Dict, Any
 from opensearchpy import OpenSearch, RequestsHttpConnection, helpers
 from requests_aws4auth import AWS4Auth
-from botocore.exceptions import ClientError
 
 class OpenSearchClient:
     """
@@ -66,19 +65,27 @@ class OpenSearchClient:
         if not self.client:
             raise RuntimeError("OpenSearch client not initialized - host not set")
 
-    def index_exists(self, index_name: str) -> bool:
-        """
-        Checks if an index with the given name exists.
-        """
+    def search(self, index: str, body: Dict) -> Dict:
+        """Execute a search query."""
+        self._ensure_client()
+        return self.client.search(index=index, body=body)
+
+    def bulk_index(self, actions: List[Dict[str, Any]]) -> None:
+        """Bulk index documents."""
+        self._ensure_client()
         try:
-            self._ensure_client()
-            return self.client.indices.exists(index=index_name)
+            helpers.bulk(self.client, actions)
         except Exception as e:
-            print(f"Error checking if index exists: {e}")
-            return False # Assume it doesn't exist on error.
-    
-    def create_index(self, index_name: str, settings: dict, mapping: dict):
-        """Creates an index with given settings and mapping."""
+            print(f"Error during bulk indexing: {e}")
+            raise
+
+    def index_exists(self, index_name: str) -> bool:
+        """Check if an index exists."""
+        self._ensure_client()
+        return self.client.indices.exists(index=index_name)
+
+    def create_index(self, index_name: str, settings: Dict, mapping: Dict) -> None:
+        """Create an index with settings and mapping."""
         self._ensure_client()
         try:
             self.client.indices.create(
@@ -93,8 +100,8 @@ class OpenSearchClient:
             print(f"Error creating index: {e}")
             raise
 
-    def delete_index(self, index_name: str):
-        """Deletes an index"""
+    def delete_index(self, index_name: str) -> None:
+        """Delete an index."""
         self._ensure_client()
         try:
             self.client.indices.delete(index=index_name, ignore=[400, 404])
@@ -102,29 +109,3 @@ class OpenSearchClient:
         except Exception as e:
             print(f"Error deleting index: {e}")
             raise
-
-    def get_index_info(self, index_name: str):
-        """
-        Retrieves the index information (settings and mappings) from OpenSearch.
-        Returns None if the index does not exist.
-        """
-        self._ensure_client()
-        try:
-            settings = self.client.indices.get_settings(index=index_name)
-            mappings = self.client.indices.get_mapping(index=index_name)
-            return settings, mappings
-        except Exception as e:
-            if "index_not_found_exception" in str(e):
-                return None  # Index doesn't exist
-            else:
-                raise  # Re-raise other exceptions
-
-    def bulk_index(self, actions: list, **kwargs):
-        """Perform bulk indexing operation."""
-        self._ensure_client()
-        return helpers.bulk(self.client, actions, **kwargs)
-
-    def search(self, index: str, body: Dict[str, Any], **kwargs):
-        """Perform search operation."""
-        self._ensure_client()
-        return self.client.search(index=index, body=body, **kwargs)
