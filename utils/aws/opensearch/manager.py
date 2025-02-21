@@ -6,6 +6,7 @@ import socket
 import boto3
 from typing import Dict, Optional
 from botocore.exceptions import ClientError
+from tqdm.notebook import tqdm as tqdm_notebook
 from .types import OpenSearchConfig
 from .client import OpenSearchClient
 
