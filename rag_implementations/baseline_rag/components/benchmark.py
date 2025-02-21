@@ -1,6 +1,7 @@
 """Benchmarking utilities for BaselineRAG."""
 
 import json
+import numpy as np
 from pathlib import Path
 from typing import List, Dict, Any
 from tqdm.notebook import tqdm as tqdm_notebook
@@ -19,6 +20,13 @@ def _generate_answers(rag, eval_examples):
         for i, example in enumerate(eval_examples):
             try:
                 result = rag.query(example.query)
+                if not result or not result.get('response'):
+                    pbar.set_postfix({
+                        'Query': f"{i+1}/{total}",
+                        'Status': 'Error: Empty response'
+                    })
+                    print(f"\nEmpty response for query {i+1}")
+                    continue
 
                 questions.append(example.query)
                 contexts.append([doc['content'] for doc in result['context']])
@@ -37,18 +45,59 @@ def _generate_answers(rag, eval_examples):
                 })
                 print(f"\nError processing query {i+1}: {str(e)}")
                 continue  # Skip to the next example on error
+    
+    # Validate we have data to evaluate
+    if not questions:
+        raise ValueError("No valid responses generated for evaluation")
+    
     return questions, contexts, answers, references, query_times
 
 def _evaluate_ragas_metrics(evaluator, questions, contexts, answers, references):
-    """Evaluates RAGAs metrics."""
+    """Evaluates RAGAs metrics with error handling for empty arrays."""
     print("\nCalculating RAG metrics...")
-    return evaluator.evaluate_labeled(
-        queries=questions,
-        contexts=contexts,
-        generated_answers=answers,
-        reference_answers=references,
-        plot_results=True
-    )
+    
+    # Validate inputs
+    if not questions or not contexts or not answers or not references:
+        raise ValueError("Empty input arrays for evaluation")
+    
+    if len(questions) != len(contexts) or len(questions) != len(answers) or len(questions) != len(references):
+        raise ValueError("Mismatched array lengths for evaluation inputs")
+    
+    # Filter out any empty entries
+    valid_indices = []
+    for i in range(len(questions)):
+        if (questions[i] and contexts[i] and answers[i] and references[i] and 
+            any(ctx.strip() for ctx in contexts[i])):  # Check for non-empty contexts
+            valid_indices.append(i)
+    
+    if not valid_indices:
+        raise ValueError("No valid examples for evaluation after filtering")
+    
+    # Use only valid entries
+    filtered_questions = [questions[i] for i in valid_indices]
+    filtered_contexts = [contexts[i] for i in valid_indices]
+    filtered_answers = [answers[i] for i in valid_indices]
+    filtered_references = [references[i] for i in valid_indices]
+    
+    print(f"Evaluating {len(filtered_questions)} valid examples")
+    
+    try:
+        return evaluator.evaluate_labeled(
+            queries=filtered_questions,
+            contexts=filtered_contexts,
+            generated_answers=filtered_answers,
+            reference_answers=filtered_references,
+            plot_results=True
+        )
+    except Exception as e:
+        print(f"Error during metrics calculation: {type(e).__name__}")
+        print(f"Error details: {str(e)}")
+        print("\nInput statistics:")
+        print(f"Questions: {len(filtered_questions)}")
+        print(f"Contexts: {len(filtered_contexts)}")
+        print(f"Answers: {len(filtered_answers)}")
+        print(f"References: {len(filtered_references)}")
+        raise
 
 def run_evaluation(rag, dataset, evaluator, eval_examples):
     """Runs the complete evaluation process."""
