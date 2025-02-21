@@ -1,6 +1,7 @@
 """Benchmarking utilities for BaselineRAG."""
 
 import json
+from pathlib import Path
 from typing import List, Dict, Any
 from tqdm.notebook import tqdm as tqdm_notebook
 from utils.metrics.rag_metrics import RAGMetricsEvaluator
