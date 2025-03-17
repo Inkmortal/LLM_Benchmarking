@@ -180,7 +180,7 @@ class RAGMetricsEvaluator:
         df = pd.DataFrame(results) if isinstance(results, dict) else results
         
         # Group metrics
-        retrieval_metrics = ['context_precision', 'context_recall', 'context_entity_recall', 'noise_sensitivity_relevant']
+        retrieval_metrics = ['context_precision', 'context_recall', 'context_entity_recall', 'noise_sensitivity']
         generation_metrics = ['faithfulness', 'answer_relevancy']
         
         # Calculate mean scores
@@ -218,7 +218,7 @@ class RAGMetricsEvaluator:
         print(f"- Precision: {retrieval_scores.get('context_precision', 0):.2f} - How many retrieved documents are relevant")
         print(f"- Recall: {retrieval_scores.get('context_recall', 0):.2f} - How many relevant documents were retrieved")
         print(f"- Entity Recall: {retrieval_scores.get('context_entity_recall', 0):.2f} - How well important entities are preserved")
-        print(f"- Noise Sensitivity: {retrieval_scores.get('noise_sensitivity_relevant', 0):.2f} - Robustness against irrelevant data")
+        print(f"- Noise Sensitivity: {retrieval_scores.get('noise_sensitivity', 0):.2f} - Robustness against irrelevant data")
         
         print("\nAnswer Generation:")
         print(f"- Faithfulness: {generation_scores.get('faithfulness', 0):.2f} - How factual the answers are")

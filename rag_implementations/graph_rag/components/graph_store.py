@@ -22,6 +22,7 @@ class GraphStore:
         self.neptune_manager = None  # Initialize to None
         self.graph = None
         self.endpoint = None
+
         if not self.check_configuration():
             self._delete_cluster()  # Delete if config doesn't match
         self._create_cluster() # Create on initialization
@@ -59,6 +60,7 @@ class GraphStore:
         )
         print("Connected to Neptune")
 
+
     def _delete_cluster(self):
         """Delete existing Neptune cluster."""
         from utils.aws.neptune.cluster import NeptuneManager
@@ -74,8 +76,8 @@ class GraphStore:
     def check_configuration(self) -> bool:
         """
         Checks if the existing Neptune cluster (if any) matches the
-        expected configuration.
-        Returns True if the config matches, False otherwise.
+        expected configuration.  Returns True if the config matches,
+        False otherwise.
         """
         try:
             neptune = boto3.client('neptune')
@@ -88,14 +90,14 @@ class GraphStore:
                 # Just check if cluster exists and is available
                 return cluster_info['Status'] == 'available'
             else:
-                # Cluster doesn't exist
+                #Doesn't exist
                 return False
         except ClientError as e:
             if e.response['Error']['Code'] == 'DBClusterNotFoundFault':
                 # Cluster doesn't exist, so config "mismatches"
                 return False
             else:
-                # Some other error, raise it
+                # some other error
                 raise
 
     def ensure_initialized(self):

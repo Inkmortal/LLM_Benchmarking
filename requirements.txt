@@ -1,3 +1,4 @@
+
 # Core dependencies
 pandas
 numpy
@@ -58,3 +59,6 @@ typing-extensions
 # Dependencies with specific versions to resolve conflicts
 dill
 multiprocess
+
+# For retrieving instance metadata
+requests

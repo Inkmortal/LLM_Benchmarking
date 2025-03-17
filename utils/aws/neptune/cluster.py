@@ -7,6 +7,7 @@ import socket
 from typing import Optional, List, Dict
 import boto3
 from botocore.exceptions import ClientError
+import requests  # Import the requests library
 
 class NeptuneManager:
     def __init__(self, cluster_name: str, session: boto3.Session = None, verbose: bool = True, cleanup_enabled: bool = False):
@@ -18,17 +19,74 @@ class NeptuneManager:
         if session is None:
             session = boto3.Session()
         self.neptune = session.client('neptune')
+        self.ec2 = session.client('ec2') # We'll need EC2 client
         
         # Track resources
         self.cluster_id = None
         self.instance_id = None
         self.endpoint = None
         self.param_group_name = f"{cluster_name}-params"
+        self.vpc_id = None
+        self.subnet_ids = []
+
+        # Get VPC and subnet IDs from instance metadata if running on EC2, otherwise use default VPC
+        try:
+            self._log("Getting VPC ID and subnet ID from instance metadata...")
+            self.vpc_id = self._get_vpc_id()
+            self.subnet_ids = [self._get_subnet_id()]  # Start with the instance's subnet
+            self._log(f"Got VPC ID from instance metadata: {self.vpc_id}")
+        except Exception as e:
+            self._log(f"Could not get VPC/subnet from instance metadata: {e}. Using default VPC.")
+            vpcs = self.ec2.describe_vpcs(
+                Filters=[{'Name': 'isDefault', 'Values': ['true']}]
+            )['Vpcs']
+            if not vpcs:
+                raise Exception("No default VPC found and could not get VPC from instance metadata.")
+            self.vpc_id = vpcs[0]['VpcId']
+            
+            # Get subnets in default VPC
+            subnets = self.ec2.describe_subnets(
+                Filters=[{'Name': 'vpc-id', 'Values': [self.vpc_id]}]
+            )['Subnets']
+            
+            if len(subnets) < 2:
+                raise Exception("Need at least 2 subnets for Neptune cluster")
+            
+            self.subnet_ids = [subnet['SubnetId'] for subnet in subnets[:2]]
+
     
     def _log(self, message: str) -> None:
         """Print message if verbose mode is enabled."""
         if self.verbose:
             print(message)
+
+    def _get_instance_identity(self) -> Dict:
+        """Get EC2 instance identity document using requests."""
+        try:
+            response = requests.get('http://169.254.169.254/latest/dynamic/instance-identity/document', timeout=2)
+            response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            raise RuntimeError(f"Failed to get instance identity document: {e}")
+
+    def _get_vpc_id(self) -> str:
+        """Get VPC ID from instance identity document."""
+        identity = self._get_instance_identity()
+        # Use ec2 client to get vpc id from instance id
+        instance_description = self.ec2.describe_instances(
+            InstanceIds=[identity['instanceId']]
+        )
+        vpc_id = instance_description['Reservations'][0]['Instances'][0]['VpcId']
+        return vpc_id
+
+    def _get_subnet_id(self) -> str:
+        """Get Subnet ID from instance identity document."""
+        identity = self._get_instance_identity()
+        instance_description = self.ec2.describe_instances(
+            InstanceIds=[identity['instanceId']]
+        )
+        subnet_id = instance_description['Reservations'][0]['Instances'][0]['SubnetId']
+        return subnet_id
     
     def _fix_cluster_config(self, cluster_id: str) -> bool:
         """Try to fix cluster configuration issues."""
@@ -284,7 +342,7 @@ class NeptuneManager:
         
         if not instances['DBInstances']:
             self._log("Creating serverless instance...")
-            self.instance_id = f"{self.cluster_id}-instance"
+            self.instance_id = f"{self.cluster_name}-instance"
             
             # Create instance
             self.neptune.create_db_instance(
@@ -428,35 +486,47 @@ class NeptuneManager:
         # Create new cluster
         self._log(f"Creating new Neptune cluster: {self.cluster_name}")
         try:
-            # Get default VPC
-            ec2 = boto3.client('ec2')
-            vpcs = ec2.describe_vpcs(
-                Filters=[{'Name': 'isDefault', 'Values': ['true']}]
-            )['Vpcs']
-            
-            if not vpcs:
-                raise Exception("No default VPC found")
-            
-            vpc_id = vpcs[0]['VpcId']
-            
-            # Get subnets in default VPC
+            ec2 = self.session.client('ec2')
+
+            # If no VPC ID is provided, try to get it from instance metadata, then fall back to default VPC
+            if not self.vpc_id:
+                try:
+                    self.vpc_id = self._get_vpc_id()
+                    self._log(f"Got VPC ID from instance metadata: {self.vpc_id}")
+                except RuntimeError:
+                    self._log("Could not get VPC ID from instance metadata, using default VPC.")
+                    vpcs = ec2.describe_vpcs(Filters=[{'Name': 'isDefault', 'Values': ['true']}])['Vpcs']
+                    if not vpcs:
+                        raise Exception("No default VPC found and could not get VPC from instance metadata.")
+                    self.vpc_id = vpcs[0]['VpcId']
+
+            # Get subnets in the VPC, ensure at least 2 different AZs
             subnets = ec2.describe_subnets(
-                Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}]
+                Filters=[{'Name': 'vpc-id', 'Values': [self.vpc_id]}]
             )['Subnets']
-            
+
             if len(subnets) < 2:
                 raise Exception("Need at least 2 subnets for Neptune cluster")
-            
-            subnet_ids = [subnet['SubnetId'] for subnet in subnets[:2]]
-            
-            # Create security group
-            # Check if security group already exists
+
+            subnet_ids = []
+            availability_zones = set()
+            for subnet in subnets:
+                if subnet['AvailabilityZone'] not in availability_zones:
+                    subnet_ids.append(subnet['SubnetId'])
+                    availability_zones.add(subnet['AvailabilityZone'])
+                    if len(subnet_ids) == 2:
+                        break
+            if len(subnet_ids) < 2:
+                raise Exception("Need at least 2 subnets in different AZs")
+            self.subnet_ids = subnet_ids
+
+            # Create security group, checking for existence first
             security_group_name = f"{self.cluster_name}-sg"
             try:
                 response = ec2.describe_security_groups(
                     Filters=[
                         {'Name': 'group-name', 'Values': [security_group_name]},
-                        {'Name': 'vpc-id', 'Values': [vpc_id]}
+                        {'Name': 'vpc-id', 'Values': [self.vpc_id]}
                     ]
                 )
                 if response['SecurityGroups']:
@@ -467,7 +537,7 @@ class NeptuneManager:
                     security_group = ec2.create_security_group(
                         GroupName=security_group_name,
                         Description=f"Security group for Neptune cluster {self.cluster_name}",
-                        VpcId=vpc_id  # Specify VPC ID
+                        VpcId=self.vpc_id
                     )
                     security_group_id = security_group['GroupId']
 
@@ -489,15 +559,14 @@ class NeptuneManager:
                 response = ec2.describe_security_groups(
                     Filters=[
                         {'Name': 'group-name', 'Values': [security_group_name]},
-                        {'Name': 'vpc-id', 'Values': [vpc_id]}
+                        {'Name': 'vpc-id', 'Values': [self.vpc_id]}
                     ]
                 )
                 security_group_id = response['SecurityGroups'][0]['GroupId']
 
-            
             # Create cluster
             endpoint = self.create_cluster(
-                subnet_ids=subnet_ids,
+                subnet_ids=self.subnet_ids,
                 security_group_id=security_group_id
             )
             
