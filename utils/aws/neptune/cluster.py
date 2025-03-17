@@ -29,30 +29,9 @@ class NeptuneManager:
         self.vpc_id = None
         self.subnet_ids = []
 
-        # Get VPC and subnet IDs from instance metadata if running on EC2, otherwise use default VPC
-        try:
-            self._log("Getting VPC ID and subnet ID from instance metadata...")
-            self.vpc_id = self._get_vpc_id()
-            self.subnet_ids = [self._get_subnet_id()]  # Start with the instance's subnet
-            self._log(f"Got VPC ID from instance metadata: {self.vpc_id}")
-        except Exception as e:
-            self._log(f"Could not get VPC/subnet from instance metadata: {e}. Using default VPC.")
-            vpcs = self.ec2.describe_vpcs(
-                Filters=[{'Name': 'isDefault', 'Values': ['true']}]
-            )['Vpcs']
-            if not vpcs:
-                raise Exception("No default VPC found and could not get VPC from instance metadata.")
-            self.vpc_id = vpcs[0]['VpcId']
-            
-            # Get subnets in default VPC
-            subnets = self.ec2.describe_subnets(
-                Filters=[{'Name': 'vpc-id', 'Values': [self.vpc_id]}]
-            )['Subnets']
-            
-            if len(subnets) < 2:
-                raise Exception("Need at least 2 subnets for Neptune cluster")
-            
-            self.subnet_ids = [subnet['SubnetId'] for subnet in subnets[:2]]
+        # Initialize VPC settings as None - they will be set during create_cluster
+        self.vpc_id = None
+        self.subnet_ids = []
 
     
     def _log(self, message: str) -> None:
@@ -239,8 +218,45 @@ class NeptuneManager:
                 else:
                     raise
             
+            # Validate VPC settings
+            self._log("\nValidating VPC settings...")
+            try:
+                # Get security group's VPC
+                sg = self.ec2.describe_security_groups(
+                    GroupIds=[security_group_id]
+                )['SecurityGroups'][0]
+                sg_vpc_id = sg['VpcId']
+                
+                # Get subnets' VPC
+                subnets = self.ec2.describe_subnets(
+                    SubnetIds=subnet_ids
+                )['Subnets']
+                subnet_vpc_ids = {subnet['VpcId'] for subnet in subnets}
+                
+                # Log VPC information
+                self._log(f"Security Group {security_group_id} is in VPC {sg_vpc_id}")
+                self._log(f"Subnets {subnet_ids} are in VPCs {subnet_vpc_ids}")
+                
+                # Check if all resources are in the same VPC
+                if len(subnet_vpc_ids) > 1:
+                    raise ValueError(f"Subnets are in different VPCs: {subnet_vpc_ids}")
+                
+                subnet_vpc_id = next(iter(subnet_vpc_ids))
+                if sg_vpc_id != subnet_vpc_id:
+                    raise ValueError(f"Security group VPC ({sg_vpc_id}) does not match subnet VPC ({subnet_vpc_id})")
+                
+                # Store validated VPC ID
+                self.vpc_id = sg_vpc_id
+                self.subnet_ids = subnet_ids
+                
+                self._log(f"✅ All resources are in VPC {self.vpc_id}")
+                
+            except Exception as e:
+                self._log(f"❌ VPC validation failed: {str(e)}")
+                raise
+            
             # Create cluster with serverless configuration
-            self._log(f"Creating Neptune cluster: {self.cluster_name}")
+            self._log(f"\nCreating Neptune cluster: {self.cluster_name}")
             response = self.neptune.create_db_cluster(
                 DBClusterIdentifier=self.cluster_name,
                 Engine='neptune',

@@ -329,6 +329,7 @@ class VPCManager:
         """Find existing VPC and validate/fix configuration."""
         try:
             # Look for test-graph-rag-benchmark-vpc specifically
+            self._log("Looking for VPC with name: test-graph-rag-benchmark-vpc")
             vpcs = self.ec2.describe_vpcs(
                 Filters=[{
                     'Name': 'tag:Name',
@@ -337,37 +338,73 @@ class VPCManager:
             )
             
             if not vpcs['Vpcs']:
+                self._log("❌ VPC not found")
                 return None
                 
             vpc = vpcs['Vpcs'][0]
             vpc_id = vpc['VpcId']
+            self._log(f"✅ Found VPC: {vpc_id}")
             
             # Try to fix VPC configuration if needed
             if not self._fix_vpc_config(vpc_id):
                 self._log("Could not fix VPC configuration")
                 return None
             
-            # Look specifically for test-graph-rag-benchmark-private-1 and private-2
+            # Look specifically for test-graph-rag-benchmark-private-1 and private-2 in this VPC
+            self._log(f"\nLooking for private subnets in VPC {vpc_id}:")
+            self._log("  - test-graph-rag-benchmark-private-1")
+            self._log("  - test-graph-rag-benchmark-private-2")
+            
             subnets = self.ec2.describe_subnets(
-                Filters=[{
-                    'Name': 'tag:Name',
-                    'Values': [
-                        'test-graph-rag-benchmark-private-1',
-                        'test-graph-rag-benchmark-private-2'
-                    ]
-                }]
+                Filters=[
+                    {
+                        'Name': 'vpc-id',
+                        'Values': [vpc_id]
+                    },
+                    {
+                        'Name': 'tag:Name',
+                        'Values': [
+                            'test-graph-rag-benchmark-private-1',
+                            'test-graph-rag-benchmark-private-2'
+                        ]
+                    }
+                ]
             )
             
             if len(subnets['Subnets']) < 2:
-                self._log("Could not find both required private subnets")
+                self._log("❌ Could not find both required private subnets")
+                found_subnets = [s['Tags'][0]['Value'] for s in subnets['Subnets'] if s.get('Tags')]
+                if found_subnets:
+                    self._log(f"Found subnets: {', '.join(found_subnets)}")
                 return None
                 
             private_subnet_ids = [s['SubnetId'] for s in subnets['Subnets']]
-            self._log(f"Found private subnets: {private_subnet_ids}")
+            self._log(f"✅ Found private subnets: {private_subnet_ids}")
+            
+            # Log subnet details
+            for subnet in subnets['Subnets']:
+                name = next((tag['Value'] for tag in subnet.get('Tags', []) if tag['Key'] == 'Name'), 'Unnamed')
+                self._log(f"\nSubnet {subnet['SubnetId']} ({name}):")
+                self._log(f"  - AZ: {subnet['AvailabilityZone']}")
+                self._log(f"  - CIDR: {subnet['CidrBlock']}")
             
             # Look for existing security group in the VPC
             security_group_name = 'test-graph-rag-benchmark-sg'
+            self._log(f"\nLooking for security group '{security_group_name}' in VPC {vpc_id}")
+            
             try:
+                # First check if security group exists in any VPC
+                all_sgs = self.ec2.describe_security_groups(
+                    Filters=[{'Name': 'group-name', 'Values': [security_group_name]}]
+                )['SecurityGroups']
+                
+                if all_sgs:
+                    for sg in all_sgs:
+                        self._log(f"Found security group in VPC {sg['VpcId']}:")
+                        self._log(f"  - ID: {sg['GroupId']}")
+                        self._log(f"  - Name: {sg['GroupName']}")
+                
+                # Now look specifically in our VPC
                 security_groups = self.ec2.describe_security_groups(
                     Filters=[
                         {'Name': 'vpc-id', 'Values': [vpc_id]},
@@ -377,7 +414,7 @@ class VPCManager:
                 
                 if security_groups['SecurityGroups']:
                     security_group_id = security_groups['SecurityGroups'][0]['GroupId']
-                    self._log(f"Found existing security group: {security_group_id}")
+                    self._log(f"✅ Found security group in correct VPC: {security_group_id}")
                 else:
                     # Create new security group
                     self._log(f"Creating new security group in VPC {vpc_id}")
