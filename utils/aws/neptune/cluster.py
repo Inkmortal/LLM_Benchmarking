@@ -450,26 +450,55 @@ class NeptuneManager:
             subnet_ids = [subnet['SubnetId'] for subnet in subnets[:2]]
             
             # Create security group
-            security_group = ec2.create_security_group(
-                GroupName=f"{self.cluster_name}-sg",
-                Description=f"Security group for Neptune cluster {self.cluster_name}"
-            )
-            
-            # Add inbound rule for Neptune port
-            ec2.authorize_security_group_ingress(
-                GroupId=security_group['GroupId'],
-                IpPermissions=[{
-                    'IpProtocol': 'tcp',
-                    'FromPort': 8182,
-                    'ToPort': 8182,
-                    'IpRanges': [{'CidrIp': '0.0.0.0/0'}]
-                }]
-            )
+            # Check if security group already exists
+            security_group_name = f"{self.cluster_name}-sg"
+            try:
+                response = ec2.describe_security_groups(
+                    Filters=[
+                        {'Name': 'group-name', 'Values': [security_group_name]},
+                        {'Name': 'vpc-id', 'Values': [vpc_id]}
+                    ]
+                )
+                if response['SecurityGroups']:
+                    self._log(f"Using existing security group: {security_group_name}")
+                    security_group_id = response['SecurityGroups'][0]['GroupId']
+                else:
+                    self._log(f"Creating security group: {security_group_name}")
+                    security_group = ec2.create_security_group(
+                        GroupName=security_group_name,
+                        Description=f"Security group for Neptune cluster {self.cluster_name}",
+                        VpcId=vpc_id  # Specify VPC ID
+                    )
+                    security_group_id = security_group['GroupId']
+
+                    # Add inbound rule for Neptune port
+                    ec2.authorize_security_group_ingress(
+                        GroupId=security_group_id,
+                        IpPermissions=[{
+                            'IpProtocol': 'tcp',
+                            'FromPort': 8182,
+                            'ToPort': 8182,
+                            'IpRanges': [{'CidrIp': '0.0.0.0/0'}]
+                        }]
+                    )
+            except ClientError as e:
+                if e.response['Error']['Code'] != 'InvalidGroup.Duplicate':
+                    raise
+                # Handle race condition where group was created concurrently
+                self._log(f"Security group {security_group_name} already exists.")
+                response = ec2.describe_security_groups(
+                    Filters=[
+                        {'Name': 'group-name', 'Values': [security_group_name]},
+                        {'Name': 'vpc-id', 'Values': [vpc_id]}
+                    ]
+                )
+                security_group_id = response['SecurityGroups'][0]['GroupId']
+
             
             # Create cluster
             endpoint = self.create_cluster(
                 subnet_ids=subnet_ids,
-                security_group_id=security_group['GroupId']
+                security_group_id=security_group_id
             )
             
             return endpoint
