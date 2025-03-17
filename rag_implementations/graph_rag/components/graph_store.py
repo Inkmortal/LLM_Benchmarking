@@ -48,68 +48,29 @@ class GraphStore:
             verbose=True
         )
         
-        print("Looking for existing VPC with name: test-graph-rag-benchmark-vpc...")
+        print("Looking for test-graph-rag-benchmark-vpc and its subnets...")
         
-        # Validate subnet configurations before proceeding
-        def validate_subnet_config(subnet_ids: List[str]) -> bool:
-            ec2 = session.client('ec2')
-            try:
-                subnets = ec2.describe_subnets(SubnetIds=subnet_ids)['Subnets']
-                for subnet in subnets:
-                    print(f"Validating subnet {subnet['SubnetId']}:")
-                    print(f"  - CIDR: {subnet['CidrBlock']}")
-                    print(f"  - AZ: {subnet['AvailabilityZone']}")
-                    print(f"  - Route Table: ", end='')
-                    
-                    # Check route table
-                    route_tables = ec2.describe_route_tables(
-                        Filters=[{'Name': 'association.subnet-id', 'Values': [subnet['SubnetId']]}]
-                    )['RouteTables']
-                    
-                    if not route_tables:
-                        print("❌ No route table associated")
-                        return False
-                    
-                    # Check routes
-                    has_internet_route = False
-                    for rt in route_tables:
-                        for route in rt['Routes']:
-                            if route.get('DestinationCidrBlock') == '0.0.0.0/0':
-                                has_internet_route = True
-                                if 'NatGatewayId' in route:
-                                    print("✅ NAT Gateway route found")
-                                elif 'GatewayId' in route and 'igw-' in route['GatewayId']:
-                                    print("✅ Internet Gateway route found")
-                    
-                    if not has_internet_route:
-                        print("❌ No internet route found")
-                        return False
-                
-                return True
-            except Exception as e:
-                print(f"Error validating subnets: {str(e)}")
-                return False
-        
-        # This will find existing VPC by name (e.g. test-graph-rag-benchmark-vpc)
-        # or create a new one if it doesn't exist
+        # Get VPC and subnet configuration
         vpc_id, subnet_ids, security_group_id = vpc_manager.create_vpc()
         
         print("Setting up Neptune cluster...")
         self.neptune_manager = NeptuneManager(
             cluster_name=self.cluster_name,
+            session=session,  # Pass the same session
             cleanup_enabled=False,  # Never auto-cleanup during initialization
             verbose=True  # Enable logging
         )
         
-        # Get VPC and subnet configuration
-        vpc_id, subnet_ids, security_group_id = vpc_manager.create_vpc()
-        
         print("\nValidating subnet configurations...")
-        if not validate_subnet_config(subnet_ids):
+        if not vpc_manager._validate_subnet_config(subnet_ids):
             print("⚠️  Subnet validation failed. Attempting to fix configuration...")
             if not vpc_manager._fix_routing_tables(vpc_id):
                 raise RuntimeError("Failed to fix subnet configurations. Please check VPC and subnet settings manually.")
             print("✅ Subnet configurations fixed successfully")
+            
+            # Validate again after fixing
+            if not vpc_manager._validate_subnet_config(subnet_ids):
+                raise RuntimeError("Subnet validation still failing after fixes. Please check configurations manually.")
         else:
             print("✅ Subnet configurations validated successfully")
             
@@ -384,27 +345,12 @@ class GraphStore:
                 pass  # Best effort cleanup
             self.graph = None
 
-        if delete_resources:
-            # Import here to avoid circular imports
-            from utils.aws.neptune.vpc import VPCManager
-
-            # Clean up Neptune resources first
-            if self.neptune_manager:
-                try:
-                    self.neptune_manager.cleanup_enabled = True
-                    self.neptune_manager.cleanup()
-                except:
-                    print("Warning: Error cleaning up Neptune resources")
-                self.neptune_manager = None
-
-            # Then clean up VPC resources if they exist
+        if delete_resources and self.neptune_manager:
             try:
-                vpc_manager = VPCManager(
-                    cluster_name=self.cluster_name,
-                    verbose=True
-                )
-                vpc_manager.cleanup()
+                self.neptune_manager.cleanup_enabled = True
+                self.neptune_manager.cleanup()
             except:
-                print("Warning: Error cleaning up VPC resources")
+                print("Warning: Error cleaning up Neptune resources")
+            self.neptune_manager = None
 
         self._initialized = False

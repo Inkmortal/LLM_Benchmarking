@@ -112,6 +112,45 @@ class VPCManager:
             self._log(f"Error fixing VPC config: {str(e)}")
             return False
     
+    def _validate_subnet_config(self, subnet_ids: List[str]) -> bool:
+        """Validate subnet configurations including route tables and internet access."""
+        try:
+            subnets = self.ec2.describe_subnets(SubnetIds=subnet_ids)['Subnets']
+            for subnet in subnets:
+                self._log(f"Validating subnet {subnet['SubnetId']}:")
+                self._log(f"  - CIDR: {subnet['CidrBlock']}")
+                self._log(f"  - AZ: {subnet['AvailabilityZone']}")
+                self._log(f"  - Route Table: ", end='')
+                
+                # Check route table
+                route_tables = self.ec2.describe_route_tables(
+                    Filters=[{'Name': 'association.subnet-id', 'Values': [subnet['SubnetId']]}]
+                )['RouteTables']
+                
+                if not route_tables:
+                    self._log("❌ No route table associated")
+                    return False
+                
+                # Check routes
+                has_internet_route = False
+                for rt in route_tables:
+                    for route in rt['Routes']:
+                        if route.get('DestinationCidrBlock') == '0.0.0.0/0':
+                            has_internet_route = True
+                            if 'NatGatewayId' in route:
+                                self._log("✅ NAT Gateway route found")
+                            elif 'GatewayId' in route and 'igw-' in route['GatewayId']:
+                                self._log("✅ Internet Gateway route found")
+                
+                if not has_internet_route:
+                    self._log("❌ No internet route found")
+                    return False
+            
+            return True
+        except Exception as e:
+            self._log(f"Error validating subnets: {str(e)}")
+            return False
+
     def _fix_routing_tables(self, vpc_id: str) -> bool:
         """Fix routing table configurations."""
         try:
@@ -289,11 +328,11 @@ class VPCManager:
     def _find_existing_vpc(self) -> Optional[Tuple[str, List[str], str]]:
         """Find existing VPC and validate/fix configuration."""
         try:
-            # Look for VPC with our name
+            # Look for test-graph-rag-benchmark-vpc specifically
             vpcs = self.ec2.describe_vpcs(
                 Filters=[{
                     'Name': 'tag:Name',
-                    'Values': [f'{self.cluster_name}-vpc']
+                    'Values': ['test-graph-rag-benchmark-vpc']
                 }]
             )
             
@@ -308,38 +347,74 @@ class VPCManager:
                 self._log("Could not fix VPC configuration")
                 return None
             
-            # Get private subnets
+            # Look specifically for test-graph-rag-benchmark-private-1 and private-2
             subnets = self.ec2.describe_subnets(
-                Filters=[
-                    {'Name': 'vpc-id', 'Values': [vpc_id]},
-                    {'Name': 'tag:Name', 'Values': [f'{self.cluster_name}-private-*']}
-                ]
-            )
-            private_subnet_ids = [s['SubnetId'] for s in subnets['Subnets']]
-            
-            # Get security group
-            security_groups = self.ec2.describe_security_groups(
-                Filters=[
-                    {'Name': 'vpc-id', 'Values': [vpc_id]},
-                    {'Name': 'group-name', 'Values': [f'{self.cluster_name}-sg']}
-                ]
+                Filters=[{
+                    'Name': 'tag:Name',
+                    'Values': [
+                        'test-graph-rag-benchmark-private-1',
+                        'test-graph-rag-benchmark-private-2'
+                    ]
+                }]
             )
             
-            if not security_groups['SecurityGroups']:
-                # Create security group if it doesn't exist
-                security_group = self.ec2.create_security_group(
-                    GroupName=f'{self.cluster_name}-sg',
-                    Description=f'Security group for Neptune cluster {self.cluster_name}',
-                    VpcId=vpc_id
-                )
-                security_group_id = security_group['GroupId']
+            if len(subnets['Subnets']) < 2:
+                self._log("Could not find both required private subnets")
+                return None
                 
-                # Add rules
-                self._check_security_group(security_group_id)
-            else:
-                security_group_id = security_groups['SecurityGroups'][0]['GroupId']
-                # Check and fix rules if needed
-                self._check_security_group(security_group_id)
+            private_subnet_ids = [s['SubnetId'] for s in subnets['Subnets']]
+            self._log(f"Found private subnets: {private_subnet_ids}")
+            
+            # Look for existing security group in the VPC
+            security_group_name = 'test-graph-rag-benchmark-sg'
+            try:
+                security_groups = self.ec2.describe_security_groups(
+                    Filters=[
+                        {'Name': 'vpc-id', 'Values': [vpc_id]},
+                        {'Name': 'group-name', 'Values': [security_group_name]}
+                    ]
+                )
+                
+                if security_groups['SecurityGroups']:
+                    security_group_id = security_groups['SecurityGroups'][0]['GroupId']
+                    self._log(f"Found existing security group: {security_group_id}")
+                else:
+                    # Create new security group
+                    self._log(f"Creating new security group in VPC {vpc_id}")
+                    security_group = self.ec2.create_security_group(
+                        GroupName=security_group_name,
+                        Description=f'Security group for Neptune cluster in {vpc_id}',
+                        VpcId=vpc_id
+                    )
+                    security_group_id = security_group['GroupId']
+                    
+                    # Add Neptune port rule
+                    self.ec2.authorize_security_group_ingress(
+                        GroupId=security_group_id,
+                        IpPermissions=[{
+                            'FromPort': 8182,
+                            'ToPort': 8182,
+                            'IpProtocol': 'tcp',
+                            'IpRanges': [{'CidrIp': '0.0.0.0/0'}]
+                        }]
+                    )
+                    
+                    # Add outbound rule
+                    self.ec2.authorize_security_group_egress(
+                        GroupId=security_group_id,
+                        IpPermissions=[{
+                            'IpProtocol': '-1',
+                            'FromPort': -1,
+                            'ToPort': -1,
+                            'IpRanges': [{'CidrIp': '0.0.0.0/0'}]
+                        }]
+                    )
+                    
+                    self._log(f"Created security group: {security_group_id}")
+                
+            except Exception as e:
+                self._log(f"Error handling security group: {str(e)}")
+                return None
             
             # Store IDs
             self.vpc_id = vpc_id
