@@ -7,6 +7,7 @@ import json
 import nbformat
 import types
 import sys
+import inspect
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -29,17 +30,16 @@ def notebook_to_module(notebook_path: str, module_name: Optional[str] = None) ->
     """
     # Resolve and validate path
     nb_path = Path(notebook_path)
+
+    # If path is not absolute, resolve it relative to the calling file
+    if not nb_path.is_absolute():
+        frame = inspect.stack()[1]
+        caller_file = Path(frame.filename).resolve()
+        nb_path = (caller_file.parent / nb_path).resolve()
     
     # Try project root if path doesn't exist
     if not nb_path.exists():
-        # Look for notebook in sys.path directories
-        for path in sys.path:
-            project_path = Path(path) / notebook_path
-            if project_path.exists():
-                nb_path = project_path
-                break
-        else:
-            raise FileNotFoundError(f"Notebook not found: {notebook_path} (searched in current directory and sys.path)")
+        raise FileNotFoundError(f"Notebook not found: {notebook_path} (resolved to: {nb_path})")
     
     # Default module name to notebook filename
     if module_name is None:
