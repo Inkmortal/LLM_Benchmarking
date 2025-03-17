@@ -54,9 +54,31 @@ def _evaluate_ragas_metrics(evaluator, questions, contexts, answers, references)
         plot_results=True
     )
 
+def _validate_infrastructure(rag):
+    """Validates VPC and Neptune infrastructure before evaluation."""
+    if not rag.graph_store or not rag.graph_store._initialized:
+        raise RuntimeError("Graph store not properly initialized")
+    
+    print("\nValidating infrastructure configuration...")
+    print(f"VPC ID: {rag.graph_store.neptune_manager.vpc_id}")
+    print(f"Subnet IDs: {rag.graph_store.neptune_manager.subnet_ids}")
+    print(f"Neptune Endpoint: {rag.graph_store.endpoint}")
+    
+    # Verify Neptune connection
+    try:
+        # Try to list vertices to verify connection
+        rag.graph_store.graph.get_vertices(limit=1)
+        print("✅ Neptune connection verified")
+    except Exception as e:
+        print(f"❌ Neptune connection failed: {str(e)}")
+        raise RuntimeError("Failed to connect to Neptune. Please check VPC and subnet configuration.") from e
+
 def run_evaluation(rag, dataset, evaluator, eval_examples):
     """Runs the complete evaluation process."""
-
+    
+    # Validate infrastructure first
+    _validate_infrastructure(rag)
+    
     questions, contexts, answers, references, graph_contexts, graph_query_times = _generate_answers(rag, eval_examples)
 
     # Calculate standard RAG metrics

@@ -179,13 +179,35 @@ class RAGMetricsEvaluator:
         # Convert dictionary to DataFrame if needed
         df = pd.DataFrame(results) if isinstance(results, dict) else results
         
-        # Group metrics
-        retrieval_metrics = ['context_precision', 'context_recall', 'context_entity_recall', 'noise_sensitivity']
-        generation_metrics = ['faithfulness', 'answer_relevancy']
+        # Group metrics with fallbacks for different naming conventions
+        retrieval_metrics = {
+            'context_precision': ['context_precision'],
+            'context_recall': ['context_recall'],
+            'context_entity_recall': ['context_entity_recall'],
+            'noise_sensitivity': ['noise_sensitivity', 'noise_sensitivity_relevant']  # Handle both naming variants
+        }
+        generation_metrics = {
+            'faithfulness': ['faithfulness'],
+            'answer_relevancy': ['answer_relevancy']
+        }
+        
+        # Helper function to get metric value with fallbacks
+        def get_metric_value(metrics_dict, metric_name):
+            for possible_name in metrics_dict[metric_name]:
+                if possible_name in df.columns:
+                    return df[possible_name].mean()
+            return 0.0  # Return 0 if metric not found
         
         # Calculate mean scores
-        retrieval_scores = df[retrieval_metrics].mean()
-        generation_scores = df[generation_metrics].mean()
+        retrieval_scores = pd.Series({
+            metric: get_metric_value(retrieval_metrics, metric)
+            for metric in retrieval_metrics.keys()
+        })
+        
+        generation_scores = pd.Series({
+            metric: get_metric_value(generation_metrics, metric)
+            for metric in generation_metrics.keys()
+        })
         
         # Create comparison plots
         plt.figure(figsize=(12, 6))
