@@ -115,9 +115,22 @@ class VPCManager:
     def _validate_subnet_config(self, subnet_ids: List[str]) -> bool:
         """Validate subnet configurations including route tables and internet access."""
         try:
+            self._log("\nValidating subnet configurations...")
             subnets = self.ec2.describe_subnets(SubnetIds=subnet_ids)['Subnets']
+            
+            # First check if subnets are in the correct VPC
+            vpc_ids = {subnet['VpcId'] for subnet in subnets}
+            if len(vpc_ids) > 1:
+                self._log(f"Error: Subnets are in different VPCs: {vpc_ids}")
+                return False
+            
+            vpc_id = next(iter(vpc_ids))
+            self._log(f"All subnets are in VPC: {vpc_id}")
+            
+            # Then check each subnet's configuration
             for subnet in subnets:
-                self._log(f"Validating subnet {subnet['SubnetId']}:")
+                self._log(f"\nChecking subnet {subnet['SubnetId']}:")
+                self._log(f"  - VPC: {subnet['VpcId']}")
                 self._log(f"  - CIDR: {subnet['CidrBlock']}")
                 self._log(f"  - AZ: {subnet['AvailabilityZone']}")
                 # Check route table
@@ -126,25 +139,26 @@ class VPCManager:
                 )['RouteTables']
                 
                 if not route_tables:
-                    self._log("  - Route Table: ❌ No route table associated")
+                    self._log(f"Subnet {subnet['SubnetId']}: No route table associated")
                     return False
                 
                 # Check routes
-                route_info = []
                 has_internet_route = False
+                route_info = []
                 for rt in route_tables:
+                    rt_id = rt['RouteTableId']
                     for route in rt['Routes']:
                         if route.get('DestinationCidrBlock') == '0.0.0.0/0':
                             has_internet_route = True
                             if 'NatGatewayId' in route:
-                                route_info.append("✅ NAT Gateway route")
+                                route_info.append(f"NAT Gateway route in {rt_id}")
                             elif 'GatewayId' in route and 'igw-' in route['GatewayId']:
-                                route_info.append("✅ Internet Gateway route")
+                                route_info.append(f"Internet Gateway route in {rt_id}")
                 
                 if has_internet_route:
-                    self._log(f"  - Route Table: {', '.join(route_info)}")
+                    self._log(f"Subnet {subnet['SubnetId']} routes: {', '.join(route_info)}")
                 else:
-                    self._log("  - Route Table: ❌ No internet route found")
+                    self._log(f"Subnet {subnet['SubnetId']}: No internet route found")
                     return False
             
             return True
