@@ -120,30 +120,31 @@ class VPCManager:
                 self._log(f"Validating subnet {subnet['SubnetId']}:")
                 self._log(f"  - CIDR: {subnet['CidrBlock']}")
                 self._log(f"  - AZ: {subnet['AvailabilityZone']}")
-                self._log(f"  - Route Table: ", end='')
-                
                 # Check route table
                 route_tables = self.ec2.describe_route_tables(
                     Filters=[{'Name': 'association.subnet-id', 'Values': [subnet['SubnetId']]}]
                 )['RouteTables']
                 
                 if not route_tables:
-                    self._log("❌ No route table associated")
+                    self._log("  - Route Table: ❌ No route table associated")
                     return False
                 
                 # Check routes
+                route_info = []
                 has_internet_route = False
                 for rt in route_tables:
                     for route in rt['Routes']:
                         if route.get('DestinationCidrBlock') == '0.0.0.0/0':
                             has_internet_route = True
                             if 'NatGatewayId' in route:
-                                self._log("✅ NAT Gateway route found")
+                                route_info.append("✅ NAT Gateway route")
                             elif 'GatewayId' in route and 'igw-' in route['GatewayId']:
-                                self._log("✅ Internet Gateway route found")
+                                route_info.append("✅ Internet Gateway route")
                 
-                if not has_internet_route:
-                    self._log("❌ No internet route found")
+                if has_internet_route:
+                    self._log(f"  - Route Table: {', '.join(route_info)}")
+                else:
+                    self._log("  - Route Table: ❌ No internet route found")
                     return False
             
             return True
