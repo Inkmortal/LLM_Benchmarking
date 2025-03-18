@@ -26,12 +26,11 @@ class NeptuneManager:
         self.instance_id = None
         self.endpoint = None
         self.param_group_name = f"{cluster_name}-params"
-        self.vpc_id = None
-        self.subnet_ids = []
-
+        
         # Initialize VPC settings as None - they will be set during create_cluster
         self.vpc_id = None
         self.subnet_ids = []
+        self.security_group_id = None
 
     
     def _log(self, message: str) -> None:
@@ -178,6 +177,8 @@ class NeptuneManager:
         security_group_id: str,
         subnet_group_name: Optional[str] = None
     ) -> str:
+        # Store the security group ID
+        self.security_group_id = security_group_id
         """
         Create Neptune cluster and return endpoint.
         
@@ -502,88 +503,14 @@ class NeptuneManager:
         # Create new cluster
         self._log(f"Creating new Neptune cluster: {self.cluster_name}")
         try:
-            ec2 = self.session.client('ec2')
+            # Use the VPC settings that were passed to create_cluster
+            if not self.vpc_id or not self.subnet_ids:
+                raise Exception("VPC and subnet settings must be provided before creating cluster")
 
-            # If no VPC ID is provided, try to get it from instance metadata, then fall back to default VPC
-            if not self.vpc_id:
-                try:
-                    self.vpc_id = self._get_vpc_id()
-                    self._log(f"Got VPC ID from instance metadata: {self.vpc_id}")
-                except RuntimeError:
-                    self._log("Could not get VPC ID from instance metadata, using default VPC.")
-                    vpcs = ec2.describe_vpcs(Filters=[{'Name': 'isDefault', 'Values': ['true']}])['Vpcs']
-                    if not vpcs:
-                        raise Exception("No default VPC found and could not get VPC from instance metadata.")
-                    self.vpc_id = vpcs[0]['VpcId']
-
-            # Get subnets in the VPC, ensure at least 2 different AZs
-            subnets = ec2.describe_subnets(
-                Filters=[{'Name': 'vpc-id', 'Values': [self.vpc_id]}]
-            )['Subnets']
-
-            if len(subnets) < 2:
-                raise Exception("Need at least 2 subnets for Neptune cluster")
-
-            subnet_ids = []
-            availability_zones = set()
-            for subnet in subnets:
-                if subnet['AvailabilityZone'] not in availability_zones:
-                    subnet_ids.append(subnet['SubnetId'])
-                    availability_zones.add(subnet['AvailabilityZone'])
-                    if len(subnet_ids) == 2:
-                        break
-            if len(subnet_ids) < 2:
-                raise Exception("Need at least 2 subnets in different AZs")
-            self.subnet_ids = subnet_ids
-
-            # Create security group, checking for existence first
-            security_group_name = f"{self.cluster_name}-sg"
-            try:
-                response = ec2.describe_security_groups(
-                    Filters=[
-                        {'Name': 'group-name', 'Values': [security_group_name]},
-                        {'Name': 'vpc-id', 'Values': [self.vpc_id]}
-                    ]
-                )
-                if response['SecurityGroups']:
-                    self._log(f"Using existing security group: {security_group_name}")
-                    security_group_id = response['SecurityGroups'][0]['GroupId']
-                else:
-                    self._log(f"Creating security group: {security_group_name}")
-                    security_group = ec2.create_security_group(
-                        GroupName=security_group_name,
-                        Description=f"Security group for Neptune cluster {self.cluster_name}",
-                        VpcId=self.vpc_id
-                    )
-                    security_group_id = security_group['GroupId']
-
-                    # Add inbound rule for Neptune port
-                    ec2.authorize_security_group_ingress(
-                        GroupId=security_group_id,
-                        IpPermissions=[{
-                            'IpProtocol': 'tcp',
-                            'FromPort': 8182,
-                            'ToPort': 8182,
-                            'IpRanges': [{'CidrIp': '0.0.0.0/0'}]
-                        }]
-                    )
-            except ClientError as e:
-                if e.response['Error']['Code'] != 'InvalidGroup.Duplicate':
-                    raise
-                # Handle race condition where group was created concurrently
-                self._log(f"Security group {security_group_name} already exists.")
-                response = ec2.describe_security_groups(
-                    Filters=[
-                        {'Name': 'group-name', 'Values': [security_group_name]},
-                        {'Name': 'vpc-id', 'Values': [self.vpc_id]}
-                    ]
-                )
-                security_group_id = response['SecurityGroups'][0]['GroupId']
-
-            # Create cluster
+            # Create cluster with provided VPC settings
             endpoint = self.create_cluster(
                 subnet_ids=self.subnet_ids,
-                security_group_id=security_group_id
+                security_group_id=self.security_group_id
             )
             
             return endpoint

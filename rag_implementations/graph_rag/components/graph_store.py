@@ -43,12 +43,12 @@ class GraphStore:
         
         print("Setting up VPC infrastructure...")
         vpc_manager = VPCManager(
-            cluster_name="test-graph-rag-benchmark",  # This will look for test-graph-rag-benchmark-vpc
+            cluster_name=self.cluster_name,  # Use the same name for VPC and cluster
             session=session,
             verbose=True
         )
         
-        print("Looking for test-graph-rag-benchmark-vpc and its subnets...")
+        print(f"Looking for {self.cluster_name}-vpc and its subnets...")
         
         # Get VPC and subnet configuration
         vpc_id, subnet_ids, security_group_id = vpc_manager.create_vpc()

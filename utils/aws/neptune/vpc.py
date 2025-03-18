@@ -343,12 +343,13 @@ class VPCManager:
     def _find_existing_vpc(self) -> Optional[Tuple[str, List[str], str]]:
         """Find existing VPC and validate/fix configuration."""
         try:
-            # Look for test-graph-rag-benchmark-vpc specifically
-            self._log("Looking for VPC with name: test-graph-rag-benchmark-vpc")
+            # Look for VPC by name pattern
+            vpc_name = f"{self.cluster_name}-vpc"
+            self._log(f"Looking for VPC with name: {vpc_name}")
             vpcs = self.ec2.describe_vpcs(
                 Filters=[{
                     'Name': 'tag:Name',
-                    'Values': ['test-graph-rag-benchmark-vpc']
+                    'Values': [vpc_name]
                 }]
             )
             
@@ -365,61 +366,76 @@ class VPCManager:
                 self._log("Could not fix VPC configuration")
                 return None
             
-            # Look specifically for test-graph-rag-benchmark-private-1 and private-2 in this VPC
-            self._log(f"\nLooking for private subnets in VPC {vpc_id}:")
-            self._log("  - test-graph-rag-benchmark-private-1")
-            self._log("  - test-graph-rag-benchmark-private-2")
+            # Find private subnets in this VPC
+            self._log(f"\nLooking for private subnets in VPC {vpc_id}")
             
+            # Get all subnets in the VPC
             subnets = self.ec2.describe_subnets(
-                Filters=[
-                    {
-                        'Name': 'vpc-id',
-                        'Values': [vpc_id]
-                    },
-                    {
-                        'Name': 'tag:Name',
-                        'Values': [
-                            'test-graph-rag-benchmark-private-1',
-                            'test-graph-rag-benchmark-private-2'
-                        ]
-                    }
-                ]
-            )
+                Filters=[{
+                    'Name': 'vpc-id',
+                    'Values': [vpc_id]
+                }]
+            )['Subnets']
             
-            if len(subnets['Subnets']) < 2:
-                self._log("❌ Could not find both required private subnets")
-                found_subnets = [s['Tags'][0]['Value'] for s in subnets['Subnets'] if s.get('Tags')]
-                if found_subnets:
-                    self._log(f"Found subnets: {', '.join(found_subnets)}")
-                return None
+            # Filter for private subnets (no direct route to internet gateway)
+            private_subnets = []
+            for subnet in subnets:
+                # Get route table for this subnet
+                route_tables = self.ec2.describe_route_tables(
+                    Filters=[{'Name': 'association.subnet-id', 'Values': [subnet['SubnetId']]}]
+                )['RouteTables']
                 
-            private_subnet_ids = [s['SubnetId'] for s in subnets['Subnets']]
-            self._log(f"✅ Found private subnets: {private_subnet_ids}")
+                if not route_tables:
+                    continue
+                    
+                # Check if subnet has a NAT Gateway route but no Internet Gateway route
+                has_nat = False
+                has_igw = False
+                for rt in route_tables:
+                    for route in rt['Routes']:
+                        if route.get('DestinationCidrBlock') == '0.0.0.0/0':
+                            if 'NatGatewayId' in route:
+                                has_nat = True
+                            elif 'GatewayId' in route and 'igw-' in route['GatewayId']:
+                                has_igw = True
+                
+                # If subnet has NAT but no IGW, it's a private subnet
+                if has_nat and not has_igw:
+                    private_subnets.append(subnet)
+                    self._log(f"Found private subnet: {subnet['SubnetId']} in AZ {subnet['AvailabilityZone']}")
+            
+            if len(private_subnets) < 2:
+                self._log("❌ Need at least 2 private subnets in different AZs")
+                return None
+            
+            # Sort by AZ and take first 2 subnets from different AZs
+            private_subnets.sort(key=lambda x: x['AvailabilityZone'])
+            selected_subnets = []
+            used_azs = set()
+            
+            for subnet in private_subnets:
+                if subnet['AvailabilityZone'] not in used_azs:
+                    selected_subnets.append(subnet)
+                    used_azs.add(subnet['AvailabilityZone'])
+                    if len(selected_subnets) == 2:
+                        break
+            
+            private_subnet_ids = [s['SubnetId'] for s in selected_subnets]
+            self._log(f"✅ Selected private subnets: {private_subnet_ids}")
             
             # Log subnet details
-            for subnet in subnets['Subnets']:
+            for subnet in selected_subnets:
                 name = next((tag['Value'] for tag in subnet.get('Tags', []) if tag['Key'] == 'Name'), 'Unnamed')
                 self._log(f"\nSubnet {subnet['SubnetId']} ({name}):")
                 self._log(f"  - AZ: {subnet['AvailabilityZone']}")
                 self._log(f"  - CIDR: {subnet['CidrBlock']}")
             
             # Look for existing security group in the VPC
-            security_group_name = 'test-graph-rag-benchmark-sg'
+            security_group_name = f"{self.cluster_name}-sg"
             self._log(f"\nLooking for security group '{security_group_name}' in VPC {vpc_id}")
             
             try:
-                # First check if security group exists in any VPC
-                all_sgs = self.ec2.describe_security_groups(
-                    Filters=[{'Name': 'group-name', 'Values': [security_group_name]}]
-                )['SecurityGroups']
-                
-                if all_sgs:
-                    for sg in all_sgs:
-                        self._log(f"Found security group in VPC {sg['VpcId']}:")
-                        self._log(f"  - ID: {sg['GroupId']}")
-                        self._log(f"  - Name: {sg['GroupName']}")
-                
-                # Now look specifically in our VPC
+                # Look for security group in this VPC
                 security_groups = self.ec2.describe_security_groups(
                     Filters=[
                         {'Name': 'vpc-id', 'Values': [vpc_id]},
@@ -429,13 +445,13 @@ class VPCManager:
                 
                 if security_groups['SecurityGroups']:
                     security_group_id = security_groups['SecurityGroups'][0]['GroupId']
-                    self._log(f"✅ Found security group in correct VPC: {security_group_id}")
+                    self._log(f"✅ Found security group: {security_group_id}")
                 else:
                     # Create new security group
                     self._log(f"Creating new security group in VPC {vpc_id}")
                     security_group = self.ec2.create_security_group(
                         GroupName=security_group_name,
-                        Description=f'Security group for Neptune cluster in {vpc_id}',
+                        Description=f'Security group for Neptune cluster {self.cluster_name}',
                         VpcId=vpc_id
                     )
                     security_group_id = security_group['GroupId']
